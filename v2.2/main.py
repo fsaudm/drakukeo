@@ -13,17 +13,13 @@ from io import BytesIO
 from functools import lru_cache
 from fastapi.staticfiles import StaticFiles
 
-# Initialize FastAPI app
 app = FastAPI()
 
-# ========================
-# 1. Configure CORS First
-# ========================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://f881-67-173-101-35.ngrok-free.app",  # Your ngrok URL
-        "http://localhost:3000"  # For local development
+        "http://localhost:3000",
+        "https://YOUR-NGROK-OR-RENDER-URL"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -31,9 +27,6 @@ app.add_middleware(
     expose_headers=["*"]
 )
 
-# ========================
-# 2. Define All API Routes
-# ========================
 def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
@@ -41,7 +34,23 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+def fix_duplicate_observaciones(df):
+    cols = df.columns.tolist()
+    if "OBSERVACIONES" in cols and "OBSERVACIONES\n" in cols:
+        df = df.drop(columns=["OBSERVACIONES"])
+    return df
+
+def normalize_dataframe(df, required_cols):
+    df = fix_duplicate_observaciones(df)
+    for col in required_cols:
+        if col not in df.columns:
+            df[col] = ""
+    df = df[required_cols]
+    return df
+
+# ==========================
 # Load Maestro Files
+# ==========================
 try:
     proc_df = pd.read_excel(resource_path("maestro_procedimientos.xlsx"))
     med_df = pd.read_excel(resource_path("maestro_medicamentos.xlsx"))
@@ -49,10 +58,19 @@ try:
 except Exception as e:
     raise HTTPException(status_code=500, detail=f"Error loading maestro files: {e}")
 
-med_df["concat"] = med_df["DESCRIPCIÓN"].astype(str) + " " + med_df["PRESENTACION"].astype(str)
+# Build medication 'concat' field using real column names:
+med_df["concat"] = (
+    med_df["CÓDIGO"].astype(str) + " - " +
+    med_df["DESCRIPCIÓN"].astype(str) + " " +
+    med_df["PRINCIPIO ACTIVO"].astype(str) + " " +
+    med_df["FORMA FARMACEUTICA"].astype(str) + " " +
+    med_df["CONCENTRACION"].astype(str) + " " +
+    med_df["PRESENTACION"].astype(str) + " " +
+    med_df["VIA ADMINISTRACION"].astype(str)
+)
 
-# Global variables and required columns
 DATA_FILE = "data.xlsx"
+
 REQUIRED_COLUMNS = [
     'CÓDIGO DEPENDENCIA\n(ESPECIALIDAD)\n',
     'PLANILLA',
@@ -61,12 +79,11 @@ REQUIRED_COLUMNS = [
     'CEDULA',
     'NOMBRE DE BENEFICIARIO',
     'SEXO-GENERO',
-    'FECHA DE NACIMIENTO BENEFICIARIO',
-    'EDAD BENEFICIARIO',
+    'FECHA DE NACIMIENTO BENEFICIERO',
+    'EDAD BENEFICIERO',
     'TIPO DE SERVICIO/ATENCION',
     'CODIGO',
     'DESCRIPCIÓN',
-    'OBSERVACIONES',
     'DIAGNOSTICO PRINCIPAL CIE-10',
     'DIAGNSITICO SECUNDARIO 1',
     'DIAGNSITICO SECUNDARIO 2',
@@ -97,43 +114,48 @@ REQUIRED_COLUMNS = [
     'TIPO DE PRESTACIÓN\n',
     'TIPO DE MÉDICO',
     'FECHA AUTORIZADA PARA INICIO DE ATENCIÓN \n',
-    'OBSERVACIONES\n',
-    'MARCA FINAL (SIEMPRE F)'
+    'OBSERVACIONES\n'
 ]
 
 if os.path.exists(DATA_FILE):
     df = pd.read_excel(DATA_FILE)
     df.columns = df.columns.str.strip()
-    if len(df.columns) != len(REQUIRED_COLUMNS):
-        raise HTTPException(
-            status_code=500,
-            detail=f"Data file missing columns (by index): expected {len(REQUIRED_COLUMNS)} but got {len(df.columns)}"
-        )
-    else:
-        df.columns = REQUIRED_COLUMNS
+    df = normalize_dataframe(df, REQUIRED_COLUMNS)
 else:
     df = pd.DataFrame(columns=REQUIRED_COLUMNS)
 
-# --------------------------
-# Grid columns (for frontend display)
-# --------------------------
 grid_columns = [
-    'CÓDIGO DEPENDENCIA (ESPECIALIDAD)',  # Removed \n
+    'FECHA DE INGRESO',
+    'FECHA DE EGRESO',
+    'CÓDIGO DEPENDENCIA (ESPECIALIDAD)',
     'FECHA ANTENCION',
     'CEDULA',
     'NOMBRE DE BENEFICIARIO',
     'CODIGO',
     'DESCRIPCIÓN',
-    'OBSERVACIONES',
     'DIAGNOSTICO PRINCIPAL CIE-10',
+    'DIAGNSITICO SECUNDARIO 1',
     'CANTIDAD',
     'DIAGNOSTICO PRESUNTIVO O DIFINITIVO',
-    'OBSERVACIONES'  # Removed trailing \n
+    'OBSERVACIONES'
 ]
 
-# --------------------------
-# PYDANTIC Models
-# --------------------------
+color_fills = [
+    PatternFill(start_color="FF92D050", end_color="FF92D050", fill_type="darkGrid"),
+    PatternFill(start_color="FF00B0F0", end_color="FF00B0F0", fill_type="darkTrellis"),
+    PatternFill(start_color="FFFFC000", end_color="FFFFC000", fill_type="lightGrid"),
+    PatternFill(start_color="FF7030A0", end_color="FF7030A0", fill_type="lightTrellis"),
+    PatternFill(start_color="FF00B050", end_color="FF00B050", fill_type="darkHorizontal"),
+    PatternFill(start_color="FFED7D31", end_color="FFED7D31", fill_type="darkVertical"),
+    PatternFill(start_color="FFFF0000", end_color="FFFF0000", fill_type="lightHorizontal"),
+    PatternFill(start_color="FF4472C4", end_color="FF4472C4", fill_type="lightVertical"),
+    PatternFill(start_color="FFBFBFBF", end_color="FFBFBFBF", fill_type="darkDown"),
+    PatternFill(start_color="FFFF00FF", end_color="FFFF00FF", fill_type="darkUp")
+]
+
+# -----------------------------
+# Pydantic Models
+# -----------------------------
 class EntryItem(BaseModel):
     name: str = ""
     code: str = ""
@@ -143,17 +165,20 @@ class NewEntry(BaseModel):
     paciente: str = ""
     diagnostico_name: str = ""
     diagnostico_code: str = ""
+    diagnostico_secundario_name: str = ""
+    diagnostico_secundario_code: str = ""
+    fecha_ingreso: str = ""
+    fecha_egreso: str = ""
     procedimientos: list[EntryItem] = []
     medicamentos: list[EntryItem] = []
     insumos: list[EntryItem] = []
 
-# New model for row deletion
 class DeleteRows(BaseModel):
     ids: list[int]
 
-# --------------------------
-# API Endpoints
-# --------------------------
+# -----------------------------
+# Endpoints
+# -----------------------------
 @app.post("/upload/")
 async def upload_file(file: UploadFile = File(...)):
     global df
@@ -167,13 +192,7 @@ async def upload_file(file: UploadFile = File(...)):
         else:
             temp_df = pd.read_excel(BytesIO(contents))
         temp_df.columns = temp_df.columns.str.strip()
-        if len(temp_df.columns) != len(REQUIRED_COLUMNS):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Expected {len(REQUIRED_COLUMNS)} columns, got {len(temp_df.columns)}"
-            )
-        else:
-            temp_df.columns = REQUIRED_COLUMNS
+        temp_df = normalize_dataframe(temp_df, REQUIRED_COLUMNS)
         df = temp_df
         return {"message": "File uploaded and loaded successfully."}
     except Exception as e:
@@ -182,7 +201,6 @@ async def upload_file(file: UploadFile = File(...)):
 @app.get("/data/")
 def get_data():
     records = df.to_dict(orient="records")
-    # Attach an "id" field corresponding to the row's index.
     for idx, record in enumerate(records):
         record["id"] = idx
         for key, value in record.items():
@@ -202,37 +220,30 @@ def sync_diagnostic(name: str = None, code: str = None):
         raise HTTPException(status_code=404, detail="Diagnostic not found")
     return {"name": row.iloc[0]["NOMBRE"], "code": row.iloc[0]["CÓDIGO"]}
 
-@app.get("/search/patients/")
-def search_patients(query: str):
-    results = df[df["NOMBRE DE BENEFICIARIO"].str.contains(query, case=False, na=False)]
-    return results["NOMBRE DE BENEFICIARIO"].unique().tolist()
-
 @app.get("/search/diagnostics/")
 def search_diagnostics(query: str):
-    results = diag_df[diag_df["NOMBRE"].str.contains(query, case=False, na=False)]
-    return results["NOMBRE"].tolist()
+    results = diag_df[diag_df["NOMBRE"].str.contains(query, case=False, na=False)].head(50)
+    return results[["NOMBRE", "CÓDIGO"]].to_dict(orient="records")
+
+@app.get("/search/diagnostics/code/")
+def search_diagnostics_code(query: str):
+    mask = diag_df["CÓDIGO"].astype(str).str.contains(query, case=False, na=False)
+    results = diag_df[mask].head(50)
+    return results[["NOMBRE", "CÓDIGO"]].to_dict(orient="records")
 
 @app.get("/search/procedures/")
 def search_procedures(query: str):
-    results = proc_df[proc_df["DESCRIPCIÓN"].str.contains(query, case=False, na=False)]
-    return results["DESCRIPCIÓN"].tolist()
+    results = proc_df[proc_df["DESCRIPCIÓN"].str.contains(query, case=False, na=False)].head(50)
+    return results[["DESCRIPCIÓN", "CÓDIGO"]].to_dict(orient="records")
 
 @app.get("/search/medications/")
 def search_medications(query: str):
-    results = med_df[med_df["DESCRIPCIÓN"].str.contains(query, case=False, na=False)]
-    return results["DESCRIPCIÓN"].tolist()
-
-@lru_cache(maxsize=1)
-@app.get("/medications/full/")
-def get_medications_full():
-    code_col = "CODIGO" if "CODIGO" in med_df.columns else "CÓDIGO"
-    return med_df[["DESCRIPCIÓN", code_col]].to_dict(orient="records")
-
-@lru_cache(maxsize=1)
-@app.get("/procedures/full/")
-def get_procedures_full():
-    code_col = "CODIGO" if "CODIGO" in proc_df.columns else "CÓDIGO"
-    return proc_df[["DESCRIPCIÓN", code_col]].to_dict(orient="records")
+    results = med_df[med_df["concat"].str.contains(query, case=False, na=False)].head(50)
+    # Force CODIGO to be a string
+    out = results[["concat", "CÓDIGO"]].to_dict(orient="records")
+    for item in out:
+        item["CÓDIGO"] = str(item["CÓDIGO"])
+    return out
 
 @lru_cache(maxsize=1)
 @app.get("/patients/full/")
@@ -240,9 +251,38 @@ def get_patients_full():
     return sorted(df["NOMBRE DE BENEFICIARIO"].dropna().unique().tolist())
 
 @lru_cache(maxsize=1)
+@app.get("/medications/full/")
+def get_medications_full():
+    out = []
+    for _, row in med_df.iterrows():
+        code_val = row["CÓDIGO"] if pd.notnull(row["CÓDIGO"]) else row["concat"].split(" - ")[0]
+        out.append({
+            "concat": row["concat"],
+            "CODIGO": str(code_val)
+        })
+    return out
+
+@lru_cache(maxsize=1)
+@app.get("/procedures/full/")
+def get_procedures_full():
+    out = []
+    for _, row in proc_df.iterrows():
+        out.append({
+            "DESCRIPCIÓN": row["DESCRIPCIÓN"],
+            "CÓDIGO": str(row["CÓDIGO"])
+        })
+    return out
+
+@lru_cache(maxsize=1)
 @app.get("/diagnostics/full/")
 def get_diagnostics_full():
-    return diag_df[["NOMBRE", "CÓDIGO"]].to_dict(orient="records")
+    out = []
+    for _, row in diag_df.iterrows():
+        out.append({
+            "NOMBRE": row["NOMBRE"],
+            "CÓDIGO": str(row["CÓDIGO"])
+        })
+    return out
 
 @app.get("/download/")
 def download_file():
@@ -261,6 +301,9 @@ def add_entry(entry: NewEntry):
         "NOMBRE DE BENEFICIARIO": entry.paciente,
         "DIAGNOSTICO PRINCIPAL CIE-10": entry.diagnostico_code,
         "DIAGNOSTICO PRESUNTIVO O DIFINITIVO": entry.diagnostico_name,
+        "DIAGNSITICO SECUNDARIO 1": entry.diagnostico_secundario_code,
+        "FECHA DE INGRESO": entry.fecha_ingreso,
+        "FECHA DE EGRESO": entry.fecha_egreso,
         "OBSERVACIONES": ""
     }
     new_entries = []
@@ -285,7 +328,6 @@ def add_entry(entry: NewEntry):
             row["CODIGO"] = item.code
             row["CANTIDAD"] = item.quantity
             new_entries.append(row)
-    # Insert new entries below the last row with matching patient name and inherit base fields.
     current_rows = df.to_dict(orient="records")
     for new_row in new_entries:
         patient = new_row["NOMBRE DE BENEFICIARIO"]
@@ -303,26 +345,24 @@ def add_entry(entry: NewEntry):
             current_rows.insert(insertion_index, new_row)
     df = pd.DataFrame(current_rows)
     df.to_excel(DATA_FILE, index=False, columns=df.columns.tolist())
-
     try:
         wb = load_workbook(DATA_FILE)
         ws = wb.active
         header = [cell.value for cell in ws[1]]
         patient_idx = header.index("NOMBRE DE BENEFICIARIO") + 1
         date_idx = header.index("FECHA ANTENCION") + 1
-        fill1 = PatternFill(start_color="FF92D050", end_color="FF92D050", fill_type="solid")
-        fill2 = PatternFill(start_color="FF00B0F0", end_color="FF00B0F0", fill_type="solid")
-        current_fill = fill1
+        current_color_index = -1
         prev_key = None
         for r in range(2, ws.max_row + 1):
             patient_val = ws.cell(row=r, column=patient_idx).value
             date_val = ws.cell(row=r, column=date_idx).value
-            key = (patient_val, date_val)
+            key = (date_val, patient_val)
             if key != prev_key:
-                current_fill = fill2 if current_fill == fill1 else fill1
+                current_color_index = (current_color_index + 1) % len(color_fills)
                 prev_key = key
+            fill_to_use = color_fills[current_color_index]
             for c in range(1, ws.max_column + 1):
-                ws.cell(row=r, column=c).fill = current_fill
+                ws.cell(row=r, column=c).fill = fill_to_use
         wb.save(DATA_FILE)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving colored file: {e}")
@@ -332,7 +372,6 @@ def add_entry(entry: NewEntry):
 def delete_rows(delete_request: DeleteRows):
     global df
     records = df.to_dict(orient="records")
-    # Filter out rows whose index (position) is in the provided list.
     new_records = [record for idx, record in enumerate(records) if idx not in delete_request.ids]
     df = pd.DataFrame(new_records)
     df.to_excel(DATA_FILE, index=False, columns=df.columns.tolist())
@@ -345,15 +384,9 @@ def save_file():
 
 @app.on_event("shutdown")
 def save_state():
-    state = {"data_file": DATA_FILE}
-    with open("state.json", "w") as f:
-        json.dump(state, f)
+    pass
 
-# ========================
-# 3. Mount React Frontend LAST
-# ========================
 build_path = os.path.join(os.path.dirname(__file__), "frontend", "build")
-
 if os.path.exists(build_path):
     app.mount("/", StaticFiles(directory=build_path, html=True), name="static")
 else:

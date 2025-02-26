@@ -1,0 +1,4254 @@
+Directory structure:
+└── fsaudm-drakukeo/
+    ├── v1/
+    │   ├── app.py
+    │   ├── maestro_diagnosticos.xlsx
+    │   ├── maestro_medicamentos.xlsx
+    │   ├── maestro_procedimientos.xlsx
+    │   ├── main.xlsx
+    │   ├── setup.py
+    │   ├── state.json
+    │   ├── .DS_Store
+    │   └── dist/
+    │       ├── MyApp
+    │       ├── .DS_Store
+    │       └── MyApp.app/
+    │           └── Contents/
+    │               ├── Info.plist
+    │               ├── MacOS/
+    │               │   └── MyApp
+    │               ├── Resources/
+    │               │   └── icon-windowed.icns
+    │               └── _CodeSignature/
+    │                   └── CodeResources
+    ├── v2.1/
+    │   ├── README.md
+    │   ├── 12.02.2025.ARCHIVO PLANO OCTUBRE 2024.xlsx
+    │   ├── App.css
+    │   ├── App.js
+    │   ├── maestro_diagnosticos.xlsx
+    │   ├── maestro_medicamentos.xlsx
+    │   ├── maestro_procedimientos.xlsx
+    │   ├── main.py
+    │   ├── package.json
+    │   ├── state.json
+    │   ├── yarn.lock
+    │   ├── .DS_Store
+    │   ├── __pycache__/
+    │   └── frontend/
+    └── v2.2/
+        ├── README.md
+        ├── 12.02.2025.ARCHIVO PLANO OCTUBRE 2024.xlsx
+        ├── App.css
+        ├── App.js
+        ├── data.xlsx
+        ├── maestro_diagnosticos.xlsx
+        ├── maestro_medicamentos.xlsx
+        ├── maestro_procedimientos.xlsx
+        ├── main.py
+        ├── package.json
+        ├── state.json
+        ├── yarn.lock
+        ├── .DS_Store
+        ├── __pycache__/
+        └── frontend/
+
+================================================
+File: v1/app.py
+================================================
+import sys
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import pandas as pd
+import os
+import json
+
+STATE_FILENAME = "state.json"
+
+# --------------------------
+# Load maestro files
+# --------------------------
+try:
+    proc_df = pd.read_excel("maestro_procedimientos.xlsx")
+    med_df = pd.read_excel("maestro_medicamentos.xlsx")
+    diag_df = pd.read_excel("maestro_diagnosticos.xlsx")
+except Exception as e:
+    messagebox.showerror("Error", f"Error loading maestro files: {e}")
+    exit()
+
+# Prepare concatenated field for medications
+med_df["concat"] = med_df["DESCRIPCIÓN"].astype(str) + " " + med_df["PRESENTACION"].astype(str)
+
+# --------------------------
+# Global variables
+# --------------------------
+main_file_path = None
+required_columns = [
+    'CÓDIGO DEPENDENCIA\n(ESPECIALIDAD)\n',
+    'PLANILLA',
+    'FECHA ANTENCION',
+    'TIPO DE BENEFICIARIO',
+    'CEDULA',
+    'NOMBRE DE BENEFICIARIO',
+    'SEXO-GENERO',
+    'FECHA DE NACIMIENTO BENEFICIERO',
+    'EDAD BENEFICIERO',
+    'TIPO DE SERVICIO/ATENCION',
+    'CODIGO',
+    'DESCRIPCIÓN',
+    'OBSERVACIONES',
+    'DIAGNOSTICO PRINCIPAL CIE-10',
+    'DIAGNSITICO SECUNDARIO 1',
+    'DIAGNSITICO SECUNDARIO 2',
+    'CANTIDAD',
+    'VALOR UNITARIO',
+    'DURACION CONSULTA',
+    'PARENTESCO',
+    'IDENTIFICACION AFILIADO',
+    'NOMBRE AFIALIADO',
+    'CODIGO DE DERIVACION',
+    'NUMERO SECUNCIAL DERIVACION',
+    'CONTINGENCIA CUBIERTA',
+    'DIAGNOSTICO PRESUNTIVO O DIFINITIVO',
+    'TIEMPO ANESTESIA',
+    'DIAGNSITICO SECUNDARIO 3',
+    'DIAGNSITICO SECUNDARIO 4',
+    'DIAGNSITICO SECUNDARIO 5',
+    'PORCENTAJE IVA',
+    'VALOR IVA',
+    'VALOR TOTAL',
+    'GASTOS DE GESTIÓN (VALOR\nUNITARIO) / MODIFICADORES NO\nGEOGRÁFICOS (VALOR UNITARIO)',
+    'FECHA DE INGRESO',
+    'FECHA DE EGRESO',
+    'MOTIVO DE EGRESO',
+    'COBERTURA COMPARTIDA\n',
+    'TIPO DE COBERTURA\n',
+    'DISCAPACIDAD CERTIFICADA\n',
+    'TIPO DE PRESTACIÓN\n',
+    'TIPO DE MÉDICO',
+    'FECHA AUTORIZADA PARA INICIO DE ATENCIÓN \n',
+    'OBSERVACIONES\n',
+    'MARCA FINAL (SIEMPRE F)'
+]
+main_df = pd.DataFrame(columns=required_columns)
+
+# The grid view will only show these columns:
+grid_columns = [
+    'CÓDIGO DEPENDENCIA\n(ESPECIALIDAD)\n',
+    'FECHA ANTENCION',
+    'CEDULA',
+    'NOMBRE DE BENEFICIARIO',
+    'CODIGO',
+    'DESCRIPCIÓN',
+    'OBSERVACIONES',
+    'DIAGNOSTICO PRINCIPAL CIE-10',
+    'CANTIDAD',
+    'DIAGNOSTICO PRESUNTIVO O DIFINITIVO',
+    'OBSERVACIONES\n'
+]
+
+# --------------------------
+# Utility: Clear field on Escape
+# --------------------------
+def clear_on_escape(event):
+    try:
+        event.widget.delete(0, tk.END)
+    except Exception:
+        pass
+
+# --------------------------
+# Function to load main file (with column check)
+# --------------------------
+def load_main_file():
+    global main_df, main_file_path, patients
+    file_path = filedialog.askopenfilename(
+        title="Seleccionar archivo main",
+        filetypes=[("Excel Files", "*.xlsx"), ("CSV Files", "*.csv")]
+    )
+    if file_path:
+        load_main_file_state(file_path)
+
+def load_main_file_state(file_path):
+    global main_df, main_file_path, patients
+    try:
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext == '.csv':
+            df = pd.read_csv(file_path)
+        else:
+            df = pd.read_excel(file_path)
+        missing = [col for col in required_columns if col not in df.columns]
+        if missing:
+            messagebox.showerror("Error",
+                f"El archivo seleccionado no tiene las columnas requeridas.\nSe esperaban:\n{', '.join(required_columns)}\nFaltan:\n{', '.join(missing)}")
+            return
+        main_df = df
+        main_file_path = file_path
+        patients = main_df["NOMBRE DE BENEFICIARIO"].dropna().unique().tolist()
+        paciente_combo.set_completion_list(patients)
+        refresh_treeview()
+    except Exception as e:
+        messagebox.showerror("Error", f"Error al cargar el archivo: {e}")
+
+# --------------------------
+# Autocomplete Combobox class
+# --------------------------
+class AutocompleteCombobox(ttk.Combobox):
+    def __init__(self, master=None, substring_search=False, **kw):
+        super().__init__(master, **kw)
+        self.substring_search = substring_search
+        self.bind('<KeyRelease>', self._handle_keyrelease)
+        self.bind("<Escape>", clear_on_escape)
+    def set_completion_list(self, completion_list):
+        self._completion_list = sorted(completion_list, key=str.lower)
+        self['values'] = self._completion_list
+    def _handle_keyrelease(self, event):
+        if event.keysym in ("Return", "Tab", "BackSpace", "Left", "Right", "Up", "Down", "Escape"):
+            return
+        value = self.get().lower()
+        if value == "":
+            filtered = self._completion_list
+        else:
+            if self.substring_search:
+                filtered = [item for item in self._completion_list if value in item.lower()]
+            else:
+                filtered = [item for item in self._completion_list if item.lower().startswith(value)]
+        self['values'] = filtered if filtered else self._completion_list
+        self.after(2000, lambda: self.event_generate('<Down>'))
+
+# --------------------------
+# Prepare dropdown lists
+# --------------------------
+patients = []  # updated on file load
+diag_values = diag_df["NOMBRE"].dropna().unique().tolist()
+proc_list = proc_df["DESCRIPCIÓN"].dropna().unique().tolist()
+med_list = med_df["concat"].dropna().unique().tolist()
+
+# --------------------------
+# Create main window and layout
+# --------------------------
+root = tk.Tk()
+root.title("Registro de Servicios de Pacientes")
+root.rowconfigure(0, weight=1)
+root.columnconfigure(0, weight=1)
+
+# Force light theme on macOS
+if sys.platform == "darwin":
+    try:
+        root.tk.call("tk::mac::setTheme", "Aqua")
+    except Exception as e:
+        print("Could not force light theme:", e)
+
+paned = ttk.Panedwindow(root, orient=tk.HORIZONTAL)
+paned.grid(row=0, column=0, sticky="nsew")
+left_frame = ttk.Frame(paned, width=300)
+right_frame = ttk.Frame(paned)
+paned.add(left_frame, weight=0)
+paned.add(right_frame, weight=1)
+
+# --------------------------
+# Left Frame Widgets
+# --------------------------
+ttk.Button(left_frame, text="Seleccionar Archivo Main", command=load_main_file)\
+    .grid(row=0, column=0, columnspan=4, pady=5)
+
+ttk.Label(left_frame, text="Seleccione Paciente:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+paciente_combo = AutocompleteCombobox(left_frame)
+paciente_combo.set_completion_list(patients)
+paciente_combo.grid(row=1, column=1, padx=5, pady=5)
+
+ttk.Label(left_frame, text="Observaciones:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+obs_entry = ttk.Entry(left_frame, width=40)
+obs_entry.grid(row=2, column=1, padx=5, pady=5)
+
+# Diagnóstico: name and code fields
+ttk.Label(left_frame, text="Seleccione Diagnóstico:").grid(row=3, column=0, padx=5, pady=5, sticky="w")
+diag_combo = AutocompleteCombobox(left_frame)
+diag_combo.set_completion_list(diag_values)
+diag_combo.grid(row=3, column=1, padx=5, pady=5)
+ttk.Label(left_frame, text="Código Diagnóstico:").grid(row=3, column=2, padx=5, pady=5, sticky="w")
+diag_code_entry = ttk.Entry(left_frame, width=15)
+diag_code_entry.grid(row=3, column=3, padx=5, pady=5)
+diag_code_entry.bind("<Escape>", clear_on_escape)
+def update_diag_from_code(event=None):
+    code = diag_code_entry.get().strip()
+    if code:
+        row = diag_df[diag_df["CÓDIGO"] == code]
+        if not row.empty:
+            name = row.iloc[0]["NOMBRE"]
+            diag_combo.set(name)
+diag_code_entry.bind("<KeyRelease>", update_diag_from_code)
+def update_diag_code(event):
+    selected_diag = diag_combo.get().strip()
+    if selected_diag:
+        row_diag = diag_df[diag_df["NOMBRE"] == selected_diag]
+        if not row_diag.empty:
+            code = row_diag.iloc[0]["CÓDIGO"]
+            diag_code_entry.delete(0, tk.END)
+            diag_code_entry.insert(0, code)
+diag_combo.bind("<<ComboboxSelected>>", update_diag_code)
+
+# --------------------------
+# Service Frame: Procedimientos and Medicamentos
+# --------------------------
+service_frame = ttk.Frame(left_frame)
+service_frame.grid(row=4, column=0, columnspan=4, padx=5, pady=5)
+
+# Procedimientos: combobox + "Cantidad"
+proc_frame = ttk.LabelFrame(service_frame, text="Procedimientos")
+proc_frame.grid(row=0, column=0, padx=5, pady=5)
+proc_entries = []
+proc_qty_entries = []
+for i in range(5):
+    ttk.Label(proc_frame, text=f"Procedimiento {i+1}:").grid(row=i, column=0, padx=3, pady=2, sticky="w")
+    ac = AutocompleteCombobox(proc_frame)
+    ac.set_completion_list(proc_list)
+    ac.grid(row=i, column=1, padx=3, pady=2)
+    proc_entries.append(ac)
+    ttk.Label(proc_frame, text="Cantidad:").grid(row=i, column=2, padx=3, pady=2, sticky="w")
+    qty = ttk.Entry(proc_frame, width=8)
+    qty.grid(row=i, column=3, padx=3, pady=2)
+    proc_qty_entries.append(qty)
+
+# Medicamentos: combobox with substring search + "Cantidad"
+med_frame = ttk.LabelFrame(service_frame, text="Medicamentos")
+med_frame.grid(row=0, column=1, padx=5, pady=5)
+med_entries = []
+med_qty_entries = []
+for i in range(5):
+    ttk.Label(med_frame, text=f"Medicamento {i+1}:").grid(row=i, column=0, padx=3, pady=2, sticky="w")
+    ac = AutocompleteCombobox(med_frame, substring_search=True)
+    ac.set_completion_list(med_list)
+    ac.grid(row=i, column=1, padx=3, pady=2)
+    med_entries.append(ac)
+    ttk.Label(med_frame, text="Cantidad:").grid(row=i, column=2, padx=3, pady=2, sticky="w")
+    qty = ttk.Entry(med_frame, width=8)
+    qty.grid(row=i, column=3, padx=3, pady=2)
+    med_qty_entries.append(qty)
+
+# Insumos: free text + "Cantidad" (no code lookup)
+insumos_frame = ttk.LabelFrame(left_frame, text="Insumos")
+insumos_frame.grid(row=5, column=0, columnspan=4, padx=5, pady=5)
+insumo_desc_entries = []
+insumo_qty_entries = []
+for i in range(5):
+    ttk.Label(insumos_frame, text=f"Insumo {i+1}:").grid(row=i, column=0, padx=3, pady=2, sticky="w")
+    desc = ttk.Entry(insumos_frame, width=30)
+    desc.grid(row=i, column=1, padx=3, pady=2)
+    insumo_desc_entries.append(desc)
+    ttk.Label(insumos_frame, text="Cantidad:").grid(row=i, column=2, padx=3, pady=2, sticky="w")
+    qty = ttk.Entry(insumos_frame, width=8)
+    qty.grid(row=i, column=3, padx=3, pady=2)
+    insumo_qty_entries.append(qty)
+
+ttk.Button(left_frame, text="Agregar Entrada", command=lambda: add_entry())\
+    .grid(row=6, column=1, pady=10)
+
+# --------------------------
+# Right Frame: Treeview (Grid Visualizer)
+# --------------------------
+tree = ttk.Treeview(right_frame, columns=grid_columns, show="headings")
+for col in grid_columns:
+    tree.heading(col, text=col)
+    tree.column(col, width=120, minwidth=80, stretch=True)
+tree.grid(row=0, column=0, sticky="nsew")
+vsb = ttk.Scrollbar(right_frame, orient="vertical", command=tree.yview)
+hsb = ttk.Scrollbar(right_frame, orient="horizontal", command=tree.xview)
+tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+vsb.grid(row=0, column=1, sticky="ns")
+hsb.grid(row=1, column=0, sticky="ew")
+right_frame.rowconfigure(0, weight=1)
+right_frame.columnconfigure(0, weight=1)
+
+def refresh_treeview():
+    tree.delete(*tree.get_children())
+    for idx, (_, row) in enumerate(main_df.iterrows()):
+        tag = 'even' if idx % 2 == 0 else 'odd'
+        values = [row.get(col, "") for col in grid_columns]
+        tree.insert("", "end", values=values, tags=(tag,))
+    tree.tag_configure('even', background='white')
+    tree.tag_configure('odd', background='#f0f0ff')
+
+def add_entry():
+    global main_df
+    selected_patient = paciente_combo.get().strip()
+    if not selected_patient:
+        messagebox.showwarning("Warning", "Seleccione un paciente.")
+        return
+    mask = main_df["NOMBRE DE BENEFICIARIO"].str.strip().str.lower() == selected_patient.lower()
+    if not mask.any():
+        messagebox.showerror("Error", "Paciente no encontrado en el archivo main.")
+        return
+    base_row = main_df[mask].iloc[0].to_dict()
+    base_row["TIPO DE SERVICIO/ATENCION"] = "EMERGENCIA"
+    base_row["OBSERVACIONES"] = obs_entry.get()
+    selected_diag = diag_combo.get().strip()
+    diag_code_val = diag_code_entry.get().strip()
+    if selected_diag:
+        row_diag = diag_df[diag_df["NOMBRE"] == selected_diag]
+        if row_diag.empty and diag_code_val:
+            row_diag = diag_df[diag_df["CÓDIGO"] == diag_code_val]
+        if row_diag.empty:
+            messagebox.showerror("Error", "No se encontró un diagnóstico válido.")
+            return
+        principal_code = row_diag.iloc[0]["CÓDIGO"]
+        base_row["DIAGNOSTICO PRINCIPAL CIE-10"] = principal_code
+    elif diag_code_val:
+        row_diag = diag_df[diag_df["CÓDIGO"] == diag_code_val]
+        if row_diag.empty:
+            messagebox.showerror("Error", "Código de diagnóstico no encontrado.")
+            return
+        principal_code = row_diag.iloc[0]["CÓDIGO"]
+        base_row["DIAGNOSTICO PRINCIPAL CIE-10"] = principal_code
+        diag_combo.set(row_diag.iloc[0]["NOMBRE"])
+    else:
+        messagebox.showwarning("Warning", "Seleccione o ingrese un diagnóstico.")
+        return
+    base_row["DIAGNOSTICO PRESUNTIVO O DIFINITIVO"] = diag_code_val
+
+    new_rows = []
+    for i, entry in enumerate(proc_entries):
+        text = entry.get().strip()
+        qty = proc_qty_entries[i].get().strip()
+        if text:
+            code_row = proc_df[proc_df["DESCRIPCIÓN"].str.lower() == text.lower()]
+            if code_row.empty:
+                messagebox.showerror("Error", f"No se encontró el código para el procedimiento: {text}")
+                continue
+            selected_code = code_row.iloc[0]["CÓDIGO"]
+            new_row = base_row.copy()
+            new_row["CODIGO"] = selected_code
+            new_row["DESCRIPCIÓN"] = text
+            new_row["CANTIDAD"] = qty
+            new_rows.append(new_row)
+    for i, entry in enumerate(med_entries):
+        text = entry.get().strip()
+        qty = med_qty_entries[i].get().strip()
+        if text:
+            code_row = med_df[med_df["concat"].str.lower() == text.lower()]
+            if code_row.empty:
+                messagebox.showerror("Error", f"No se encontró el código para el medicamento: {text}")
+                continue
+            selected_code = code_row.iloc[0]["CÓDIGO"]
+            new_row = base_row.copy()
+            new_row["CODIGO"] = selected_code
+            new_row["DESCRIPCIÓN"] = text
+            new_row["CANTIDAD"] = qty
+            new_rows.append(new_row)
+    for i, desc_entry in enumerate(insumo_desc_entries):
+        desc = desc_entry.get().strip()
+        qty = insumo_qty_entries[i].get().strip()
+        if desc:
+            new_row = base_row.copy()
+            new_row["CODIGO"] = ""
+            new_row["DESCRIPCIÓN"] = desc
+            new_row["CANTIDAD"] = qty
+            new_rows.append(new_row)
+    if not new_rows:
+        messagebox.showwarning("Warning", "No se ingresó ningún procedimiento, medicamento o insumo.")
+        return
+    new_df = pd.DataFrame(new_rows)
+    matching_indices = main_df.index[
+        main_df["NOMBRE DE BENEFICIARIO"].str.strip().str.lower() == selected_patient.lower()
+    ].tolist()
+    if matching_indices:
+        insert_index = max(matching_indices) + 1
+    else:
+        insert_index = len(main_df)
+    part1 = main_df.iloc[:insert_index]
+    part2 = main_df.iloc[insert_index:]
+    main_df = pd.concat([part1, new_df, part2], ignore_index=True)
+    
+    try:
+        if main_file_path and main_file_path.endswith('.csv'):
+            main_df.to_csv(main_file_path, index=False)
+        else:
+            filename = main_file_path or "main.xlsx"
+            # Save using the same columns as read (unchanged)
+            main_df.to_excel(filename, index=False, columns=main_df.columns.tolist())
+            from openpyxl import load_workbook
+            from openpyxl.styles import PatternFill
+            wb = load_workbook(filename)
+            ws = wb.active
+            header = [cell.value for cell in ws[1]]
+            try:
+                patient_idx = header.index("NOMBRE DE BENEFICIARIO") + 1
+                date_idx = header.index("FECHA ANTENCION") + 1
+            except ValueError:
+                wb.save(filename)
+            fill1 = PatternFill(start_color="FF92D050", end_color="FF92D050", fill_type="solid")
+            fill2 = PatternFill(start_color="FF00B0F0", end_color="FF00B0F0", fill_type="solid")
+            current_fill = fill1
+            prev_key = None
+            for r in range(2, ws.max_row + 1):
+                patient_val = ws.cell(row=r, column=patient_idx).value
+                date_val = ws.cell(row=r, column=date_idx).value
+                key = (patient_val, date_val)
+                if key != prev_key:
+                    if prev_key is not None:
+                        current_fill = fill2 if current_fill == fill1 else fill1
+                    prev_key = key
+                for c in range(1, ws.max_column + 1):
+                    ws.cell(row=r, column=c).fill = current_fill
+            wb.save(filename)
+    except Exception as e:
+        messagebox.showerror("Error", f"Error al guardar el archivo: {e}")
+        return
+    messagebox.showinfo("Success", "Entrada agregada correctamente.")
+    obs_entry.delete(0, tk.END)
+    diag_combo.set("")
+    diag_code_entry.delete(0, tk.END)
+    for entry in proc_entries:
+        entry.delete(0, tk.END)
+    for qty in proc_qty_entries:
+        qty.delete(0, tk.END)
+    for entry in med_entries:
+        entry.delete(0, tk.END)
+    for qty in med_qty_entries:
+        qty.delete(0, tk.END)
+    for entry in insumo_desc_entries:
+        entry.delete(0, tk.END)
+    for qty in insumo_qty_entries:
+        qty.delete(0, tk.END)
+    refresh_treeview()
+
+def on_tree_select(event):
+    selected = tree.selection()
+    if selected:
+        item = tree.item(selected[0])
+        values = item.get("values", [])
+        if len(values) >= 4:
+            paciente_combo.set(values[3])
+        if len(values) >= 8 and values[7]:
+            diag_code_entry.delete(0, tk.END)
+            diag_code_entry.insert(0, values[7])
+            update_diag_from_code()
+
+tree.bind("<<TreeviewSelect>>", on_tree_select)
+
+# --------------------------
+# State saving/loading functions
+# --------------------------
+def save_state():
+    state = {
+        "main_file_path": main_file_path,
+        "vertical_scroll": vsb.get(),
+        "tree_selection": tree.selection()
+    }
+    with open(STATE_FILENAME, "w") as f:
+        json.dump(state, f)
+
+def load_state():
+    if os.path.exists(STATE_FILENAME):
+        with open(STATE_FILENAME, "r") as f:
+            state = json.load(f)
+        file_path = state.get("main_file_path", "")
+        vertical_scroll = state.get("vertical_scroll", None)
+        selection = state.get("tree_selection", [])
+        if file_path and os.path.exists(file_path):
+            load_main_file_state(file_path)
+            tree_items = tree.get_children()
+            valid_selection = [item for item in selection if item in tree_items]
+            if valid_selection:
+                tree.selection_set(valid_selection)
+                tree.see(valid_selection[0])
+            if vertical_scroll is not None:
+                tree.yview_moveto(vertical_scroll[0])
+
+load_state()
+
+def on_closing():
+    save_state()
+    root.destroy()
+
+root.protocol("WM_DELETE_WINDOW", on_closing)
+
+# --------------------------
+# Run application
+# --------------------------
+if __name__ == '__main__':
+    root.mainloop()
+
+
+================================================
+File: v1/setup.py
+================================================
+import sys
+sys.setrecursionlimit(10000)
+
+from setuptools import setup
+
+APP = ['app.py']
+DATA_FILES = []
+OPTIONS = {
+    'argv_emulation': True,
+    'packages': ['pandas', 'openpyxl', 'numpy'],
+    'excludes': [
+        'PyInstaller.hooks.hook-gi.repository.GstCheck',
+        'PyInstaller.hooks.hook-PyQt6.QtRemoteObjects',
+        'PyInstaller.hooks.hook-PyQt5.QtWebEngineWidgets'
+    ],
+}
+
+setup(
+    app=APP,
+    data_files=DATA_FILES,
+    options={'py2app': OPTIONS},
+    setup_requires=['py2app'],
+)
+
+================================================
+File: v1/state.json
+================================================
+{"main_file_path": "/Users/Farid/Downloads/07.02.2025.ARCHIVO PLANO OCTUBRE 2024 (1).xlsx", "vertical_scroll": [0.7349570200573066, 0.755730659025788], "tree_selection": ["IEFA"]}
+
+================================================
+File: v1/dist/MyApp.app/Contents/Info.plist
+================================================
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>MyApp</string>
+	<key>CFBundleExecutable</key>
+	<string>MyApp</string>
+	<key>CFBundleIconFile</key>
+	<string>icon-windowed.icns</string>
+	<key>CFBundleIdentifier</key>
+	<string>MyApp</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>MyApp</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.0.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+</dict>
+</plist>
+
+
+================================================
+File: v1/dist/MyApp.app/Contents/_CodeSignature/CodeResources
+================================================
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>files</key>
+	<dict>
+		<key>Resources/icon-windowed.icns</key>
+		<data>
+		eEHOuYpZLB0vKGVIWGZOh5rH8+o=
+		</data>
+	</dict>
+	<key>files2</key>
+	<dict>
+		<key>Resources/icon-windowed.icns</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			uQo7VuWRab4Phv4EEGmfQsyqFqDIXZgO8OtgaAMvCzY=
+			</data>
+		</dict>
+	</dict>
+	<key>rules</key>
+	<dict>
+		<key>^Resources/</key>
+		<true/>
+		<key>^Resources/.*\.lproj/</key>
+		<dict>
+			<key>optional</key>
+			<true/>
+			<key>weight</key>
+			<real>1000</real>
+		</dict>
+		<key>^Resources/.*\.lproj/locversion.plist$</key>
+		<dict>
+			<key>omit</key>
+			<true/>
+			<key>weight</key>
+			<real>1100</real>
+		</dict>
+		<key>^Resources/Base\.lproj/</key>
+		<dict>
+			<key>weight</key>
+			<real>1010</real>
+		</dict>
+		<key>^version.plist$</key>
+		<true/>
+	</dict>
+	<key>rules2</key>
+	<dict>
+		<key>.*\.dSYM($|/)</key>
+		<dict>
+			<key>weight</key>
+			<real>11</real>
+		</dict>
+		<key>^(.*/)?\.DS_Store$</key>
+		<dict>
+			<key>omit</key>
+			<true/>
+			<key>weight</key>
+			<real>2000</real>
+		</dict>
+		<key>^(Frameworks|SharedFrameworks|PlugIns|Plug-ins|XPCServices|Helpers|MacOS|Library/(Automator|Spotlight|LoginItems))/</key>
+		<dict>
+			<key>nested</key>
+			<true/>
+			<key>weight</key>
+			<real>10</real>
+		</dict>
+		<key>^.*</key>
+		<true/>
+		<key>^Info\.plist$</key>
+		<dict>
+			<key>omit</key>
+			<true/>
+			<key>weight</key>
+			<real>20</real>
+		</dict>
+		<key>^PkgInfo$</key>
+		<dict>
+			<key>omit</key>
+			<true/>
+			<key>weight</key>
+			<real>20</real>
+		</dict>
+		<key>^Resources/</key>
+		<dict>
+			<key>weight</key>
+			<real>20</real>
+		</dict>
+		<key>^Resources/.*\.lproj/</key>
+		<dict>
+			<key>optional</key>
+			<true/>
+			<key>weight</key>
+			<real>1000</real>
+		</dict>
+		<key>^Resources/.*\.lproj/locversion.plist$</key>
+		<dict>
+			<key>omit</key>
+			<true/>
+			<key>weight</key>
+			<real>1100</real>
+		</dict>
+		<key>^Resources/Base\.lproj/</key>
+		<dict>
+			<key>weight</key>
+			<real>1010</real>
+		</dict>
+		<key>^[^/]+$</key>
+		<dict>
+			<key>nested</key>
+			<true/>
+			<key>weight</key>
+			<real>10</real>
+		</dict>
+		<key>^embedded\.provisionprofile$</key>
+		<dict>
+			<key>weight</key>
+			<real>20</real>
+		</dict>
+		<key>^version\.plist$</key>
+		<dict>
+			<key>weight</key>
+			<real>20</real>
+		</dict>
+	</dict>
+</dict>
+</plist>
+
+
+================================================
+File: v2.1/README.md
+================================================
+# v2 App: FastAPI + React
+
+This project is a professional-level web application that combines a FastAPI backend with a React frontend. The app lets you:
+
+- **Upload a main Excel file** ("archivo main.xlsx") that contains patient data.
+- **Display a grid view** of the patient records once the file is uploaded.
+- **Add new entries** using 5 input fields each for procedures, medications, and supplies.
+- **Synchronize diagnostic fields** so that the diagnostic name and code update in tandem (each in its own box).
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+  - [Backend Setup](#backend-setup)
+  - [Frontend Setup](#frontend-setup)
+- [Running the Application](#running-the-application)
+  - [Start the FastAPI Backend](#start-the-fastapi-backend)
+  - [Start the React Frontend](#start-the-react-frontend)
+- [API Endpoints](#api-endpoints)
+- [Additional Notes](#additional-notes)
+
+## Overview
+
+The v2 App consists of two components:
+
+1. **FastAPI Backend (`main.py`):**
+   - Loads and saves patient data from an Excel file.
+   - Provides endpoints for:
+     - Uploading the main file.
+     - Retrieving grid data.
+     - Autocomplete searches for patients, diagnostics, procedures, and medications.
+     - Synchronizing diagnostic fields (by name or code).
+     - Adding new entries (with 5 fields each for procedures, medications, and supplies).
+   - Saves the Excel file using the same column names and applies colored fills based on patient and date.
+
+2. **React Frontend (in the `frontend/` directory):**
+   - Provides a user interface to:
+     - Upload the main file.
+     - View the grid data of patient records.
+     - Enter new entries with separate fields for:
+       - Patient name.
+       - Diagnostic name and diagnostic code (which sync with each other).
+       - Five rows for procedures, medications, and supplies (each with fields for name, code, and quantity).
+
+## Prerequisites
+
+### Backend
+- Python 3.9+
+- Required Python packages:
+  - fastapi
+  - uvicorn
+  - pandas
+  - openpyxl
+  - pydantic
+  - python-multipart
+
+### Frontend
+- Node.js (latest LTS recommended)
+- Yarn (or npm; these instructions use Yarn)
+
+## Installation
+
+### Backend Setup
+
+1. **Place your backend files** (including `main.py`, `maestro_procedimientos.xlsx`, `maestro_medicamentos.xlsx`, and `maestro_diagnosticos.xlsx`) in a folder (e.g., `backend/`).
+
+2. **Create and activate a Python virtual environment (optional but recommended):**
+
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install the required Python packages:**
+
+   ```bash
+   pip install fastapi uvicorn pandas openpyxl python-multipart
+   ```
+
+### Frontend Setup
+
+1. **Install Node.js and Yarn:**
+   - Download Node.js from [nodejs.org](https://nodejs.org/).
+   - Install Yarn globally (if not already installed):
+
+     ```bash
+     npm install -g yarn
+     ```
+
+2. **Create a new React app:**
+
+   ```bash
+   yarn create react-app frontend
+   ```
+
+3. **Navigate to the React project folder:**
+
+   ```bash
+   cd frontend
+   ```
+
+4. **Install required dependencies:**
+
+   ```bash
+   yarn add axios react-select
+   ```
+
+5. **Replace the default files:**
+   - Replace `src/App.js` with your custom React code.
+   - Replace `src/App.css` with your custom CSS.
+   - (Optional) Delete unused files like `logo.svg`.
+
+
+6. **Build the React app for staticfrom FastAPI**
+
+    ```bash
+    yarn build
+    ```
+
+
+## Running the Application
+
+### Start the FastAPI Backend
+
+1. **Navigate to your backend folder** (where `main.py` is located).
+
+2. **Start the server using uvicorn:**
+
+   ```bash
+   uvicorn main:app --reload
+   ```
+
+3. **Test the backend API:**  
+   Open your browser and visit [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) to see interactive API documentation.
+
+### Start the React Frontend
+
+1. **Navigate to the `frontend` folder:**
+
+   ```bash
+   cd frontend
+   ```
+
+2. **Start the development server:**
+
+   ```bash
+   yarn start
+   ```
+
+3. The React app should open automatically in your browser at [http://localhost:3000](http://localhost:3000).
+
+## API Endpoints
+
+- **POST** `/upload/`  
+  Uploads the main Excel file and loads patient data.
+
+- **GET** `/data/`  
+  Returns all patient data for the grid view.
+
+- **GET** `/sync/diagnostic/`  
+  Synchronizes diagnostic fields (accepts query parameters `name` or `code`).
+
+- **GET** `/search/patients/`  
+  Searches for patients by name.
+
+- **GET** `/search/diagnostics/`  
+  Searches for diagnostics by name.
+
+- **GET** `/search/procedures/`  
+  Searches for procedures by name.
+
+- **GET** `/search/medications/`  
+  Searches for medications by name.
+
+- **POST** `/add/`  
+  Adds a new entry (with 5 fields each for procedures, medications, and supplies).
+
+- **POST** `/save/`  
+  Saves the current data to the Excel file with colored rows.
+
+## Additional Notes
+
+- **Diagnostic Sync:**  
+  The `/sync/diagnostic/` endpoint allows you to provide either a diagnostic name or code; the endpoint returns both values so that the two input fields can sync automatically.
+
+- **Grid View:**  
+  The `/data/` endpoint provides the data for the grid view. The React frontend displays this in a table after a file upload.
+
+- **Deployment:**  
+  For local development, run the FastAPI backend and React frontend on your computer. For production, consider hosting the backend on a cloud service and deploying the React build on a service such as Vercel or Netlify.
+
+Enjoy your v2 App!
+
+
+================================================
+File: v2.1/App.css
+================================================
+/* App.css */
+body {
+  background-color: #f5f5f5;
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: row;
+  min-height: 100vh;
+}
+
+.form-container {
+  flex: 1;
+  padding: 20px;
+  background-color: #ffffff;
+  overflow-y: auto;
+  max-height: 100vh;
+}
+
+.grid-container {
+  flex: 1;
+  padding: 20px;
+  background-color: #ffffff;
+  overflow-y: auto;
+  max-height: 100vh;
+}
+
+h1, h2 {
+  text-align: center;
+  color: #007bff;
+}
+
+.upload-section {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.form-group, .fieldset-group {
+  margin-bottom: 15px;
+}
+
+.diagnostico-group .diagnostico-fields {
+  display: flex;
+  gap: 10px;
+}
+
+.row-group {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+/* Nombre field (Select or input) - 75% width */
+.row-group > *:first-child {
+  flex: 3;
+  min-width: 0;
+}
+
+/* Cantidad field - 25% width */
+.row-group > *:last-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-group input {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.react-select__control {
+  width: 100%;
+  background-color: white;
+}
+
+.btn-submit,
+.btn-download {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 10px;
+  width: 100%;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.btn-submit:hover,
+.btn-download:hover {
+  background-color: #0056b3;
+}
+
+/* New clear button styling */
+.btn-clear {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 10px;
+  width: 100%;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.btn-clear:hover {
+  background-color: #c82333;
+}
+
+.grid-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.grid-table th,
+.grid-table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: center;
+}
+
+.grid-table th {
+  background-color: #007bff;
+  color: white;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.grid-table tbody tr:nth-child(odd) {
+  background-color: #f9f9f9;
+}
+
+.status {
+  text-align: center;
+  font-weight: bold;
+  color: #333;
+  margin-top: 10px;
+}
+
+/* Spinner styles */
+.spinner {
+  border: 4px solid #f3f3f3; /* Light grey */
+  border-top: 4px solid #007bff; /* Blue */
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 10px auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Add these styles to reposition and rename buttons */
+.button-group {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.download-group {
+  margin-top: 20px;
+}
+
+
+================================================
+File: v2.1/App.js
+================================================
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import Select from "react-select";
+import "./App.css";
+
+const codigoSelectStyles = {
+  control: (provided) => ({
+    ...provided,
+    backgroundColor: "white"
+  }),
+  menu: (provided) => ({
+    ...provided,
+    backgroundColor: "white"
+  }),
+  option: (provided, state) => ({
+    ...provided,
+    color: state.isSelected ? "white" : "black",
+    backgroundColor: state.isSelected ? "#007bff" : state.isFocused ? "#f0f0f0" : "white"
+  })
+};
+
+const API_BASE = "";
+const GRID_COLUMNS = [
+  "CÓDIGO DEPENDENCIA (ESPECIALIDAD)",
+  "FECHA ANTENCION",
+  "CEDULA",
+  "NOMBRE DE BENEFICIARIO",
+  "CODIGO",
+  "DESCRIPCIÓN",
+  "OBSERVACIONES",
+  "DIAGNOSTICO PRINCIPAL CIE-10",
+  "CANTIDAD",
+  "DIAGNOSTICO PRESUNTIVO O DIFINITIVO",
+  "OBSERVACIONES"
+];
+
+const blankRow = { name: "", code: "", quantity: 0 };
+
+function App() {
+  const [gridData, setGridData] = useState([]);
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [paciente, setPaciente] = useState(null);
+  const [diagnostico, setDiagnostico] = useState({ nameSelect: null, codeSelect: null });
+  const [procedimientos, setProcedimientos] = useState([{ ...blankRow }]);
+  const [medicamentos, setMedicamentos] = useState([{ ...blankRow }]);
+  const [insumos, setInsumos] = useState([{ ...blankRow }]);
+  const [patientsMaster, setPatientsMaster] = useState([]);
+  const [diagnosticsMaster, setDiagnosticsMaster] = useState([]);
+  const [proceduresMaster, setProceduresMaster] = useState([]);
+  const [medicationsMaster, setMedicationsMaster] = useState([]);
+  const [formKey, setFormKey] = useState(Date.now());
+
+  useEffect(() => {
+    // Fetch patients
+    axios.get(`${API_BASE}/patients/full/`)
+      .then(res => {
+        setPatientsMaster(res.data.map(p => ({ value: p, label: p })));
+      });
+
+    // Fetch diagnostics
+    axios.get(`${API_BASE}/diagnostics/full/`)
+      .then(res => {
+        setDiagnosticsMaster(res.data.map(item => ({
+          value: item.NOMBRE,
+          label: item.NOMBRE,
+          code: item["CÓDIGO"]
+        })));
+      });
+
+    // Fetch procedures with codes
+    axios.get(`${API_BASE}/procedures/full/`)
+      .then(res => {
+        setProceduresMaster(res.data.map(item => ({
+          value: item.DESCRIPCIÓN,
+          label: `${item.CODIGO ? String(item.CODIGO) : String(item["CÓDIGO"])} - ${item.DESCRIPCIÓN}`,
+          code: item.CODIGO ? String(item.CODIGO) : String(item["CÓDIGO"])
+        })));
+      });
+
+    // Fetch medications with codes
+    axios.get(`${API_BASE}/medications/full/`)
+      .then(res => {
+        setMedicationsMaster(res.data.map(item => ({
+          value: item.DESCRIPCIÓN,
+          label: `${item.CODIGO ? String(item.CODIGO) : String(item["CÓDIGO"])} - ${item.DESCRIPCIÓN}`,
+          code: item.CODIGO ? String(item.CODIGO) : String(item["CÓDIGO"])
+        })));
+      });
+  }, []);
+
+  // Handlers for procedures and medications with forced string conversion
+  const handleProcSelect = (index, selectedOption) => {
+    setProcedimientos(prev => {
+      const newRows = [...prev];
+      newRows[index] = {
+        name: selectedOption?.value || "",
+        code: selectedOption?.code ? String(selectedOption.code) : "",
+        quantity: newRows[index].quantity
+      };
+      if (index === newRows.length - 1 && selectedOption) {
+        newRows.push({ ...blankRow });
+      }
+      return newRows;
+    });
+  };
+
+  const handleMedSelect = (index, selectedOption) => {
+    setMedicamentos(prev => {
+      const newRows = [...prev];
+      newRows[index] = {
+        name: selectedOption?.value || "",
+        code: selectedOption?.code ? String(selectedOption.code) : "",
+        quantity: newRows[index].quantity
+      };
+      if (index === newRows.length - 1 && selectedOption) {
+        newRows.push({ ...blankRow });
+      }
+      return newRows;
+    });
+  };
+
+  const handleQuantityChange = (setter, index, value) => {
+    setter(prev => {
+      const newRows = [...prev];
+      newRows[index].quantity = Number(value) || 0;
+      return newRows;
+    });
+  };
+
+  const handleFileUpload = async (e) => {
+    const selectedFile = e.target.files[0];
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_BASE}/upload/`, formData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      setStatus(res.data.message);
+      fetchGridData();
+    } catch (error) {
+      console.error(error);
+      setStatus("Error uploading file");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchGridData = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/data/`);
+      setGridData(res.data);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleInsumoChange = (index, field, value) => {
+    setInsumos(prev => {
+      const newRows = [...prev];
+      newRows[index] = {
+        ...newRows[index],
+        [field]: value
+      };
+      if (index === newRows.length - 1 && value) {
+        newRows.push({ ...blankRow });
+      }
+      return newRows;
+    });
+  };
+
+  const handlePacienteSelect = (selectedOption) => {
+    setPaciente(selectedOption);
+  };
+
+  const handleDiagnosticoNameSelect = (selectedOption) => {
+    setDiagnostico(prev => ({
+      ...prev,
+      nameSelect: selectedOption,
+      codeSelect: selectedOption ? { value: selectedOption.code, label: selectedOption.code } : null
+    }));
+  };
+
+  const handleDiagnosticoCodeSelect = (selectedOption) => {
+    const option = diagnosticsMaster.find(opt => String(opt.code) === String(selectedOption ? selectedOption.value : ""));
+    setDiagnostico(prev => ({
+      ...prev,
+      codeSelect: selectedOption,
+      nameSelect: option ? { value: option.value, label: option.value, code: option.code } : prev.nameSelect
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const payload = {
+      paciente: paciente ? paciente.value : "",
+      diagnostico_name: diagnostico.nameSelect ? diagnostico.nameSelect.value : "",
+      diagnostico_code: diagnostico.codeSelect ? diagnostico.codeSelect.value : "",
+      procedimientos: procedimientos.filter(row => row.name),
+      medicamentos: medicamentos.filter(row => row.name),
+      insumos: insumos.filter(row => row.name)
+    };
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_BASE}/add/`, payload);
+      setStatus(res.data.message);
+      fetchGridData();
+      handleClear();
+    } catch (error) {
+      console.error(error);
+      setStatus("Error adding entry");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/download/`, { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", "data.xlsx");
+      document.body.appendChild(link);
+      link.click();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleRowClick = (row) => {
+    setPaciente({ value: row["NOMBRE DE BENEFICIARIO"], label: row["NOMBRE DE BENEFICIARIO"] });
+    if (row["DIAGNOSTICO PRINCIPAL CIE-10"]) {
+      axios.get(`${API_BASE}/sync/diagnostic/?code=${row["DIAGNOSTICO PRINCIPAL CIE-10"]}`)
+        .then((res) => setDiagnostico({
+          nameSelect: { value: res.data.name, label: res.data.name, code: res.data.code },
+          codeSelect: { value: res.data.code, label: res.data.code, code: res.data.code }
+        }))
+        .catch((err) => console.error(err));
+    }
+  };
+
+  // Updated clear function to reset all fields (including the first rows) and refresh the form key
+  const handleClear = () => {
+    setPaciente(null);
+    setDiagnostico({ nameSelect: null, codeSelect: null });
+    setProcedimientos([{ name: "", code: "", quantity: 0 }]);
+    setMedicamentos([{ name: "", code: "", quantity: 0 }]);
+    setInsumos([{ name: "", quantity: 0 }]);
+    setFormKey(Date.now());
+  };
+
+  return (
+    <div className="app-container">
+      <div className="form-container">
+        <h1>Registro de Servicios</h1>
+        {loading && <div className="spinner"></div>}
+        <div className="upload-section">
+          <label htmlFor="fileUpload">Seleccionar Archivo Main:</label>
+          <input type="file" id="fileUpload" accept=".xlsx,.csv" onChange={handleFileUpload} />
+        </div>
+        <form key={formKey} onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label>Paciente:</label>
+            <Select
+              options={patientsMaster}
+              value={paciente}
+              onChange={handlePacienteSelect}
+              placeholder="Seleccione paciente"
+              isClearable
+            />
+          </div>
+          <div className="form-group diagnostico-group">
+            <label>Diagnóstico:</label>
+            <div className="diagnostico-fields">
+              <Select
+                options={diagnosticsMaster}
+                value={diagnostico.nameSelect}
+                onChange={handleDiagnosticoNameSelect}
+                placeholder="Nombre diagnóstico"
+                isClearable
+              />
+              <Select
+                options={diagnosticsMaster.map(opt => ({
+                  value: opt.code,
+                  label: opt.code,
+                  code: opt.code
+                }))}
+                value={diagnostico.codeSelect}
+                onChange={handleDiagnosticoCodeSelect}
+                placeholder="Código diagnóstico"
+                isClearable
+                styles={codigoSelectStyles}
+              />
+            </div>
+          </div>
+          <fieldset className="fieldset-group">
+            <legend>Procedimientos</legend>
+            {procedimientos.map((item, i) => (
+              <div key={`proc-${i}`} className="row-group">
+                <Select
+                  options={proceduresMaster}
+                  value={proceduresMaster.find(opt => 
+                    opt.value === item.name && opt.code === item.code
+                  )}
+                  onChange={(selected) => handleProcSelect(i, selected)}
+                  placeholder="Seleccionar procedimiento"
+                  isClearable
+                />
+                <input
+                  type="number"
+                  value={item.quantity}
+                  onChange={(e) => handleQuantityChange(setProcedimientos, i, e.target.value)}
+                  placeholder="Cantidad"
+                  min="0"
+                />
+              </div>
+            ))}
+          </fieldset>
+          <fieldset className="fieldset-group">
+            <legend>Medicamentos</legend>
+            {medicamentos.map((item, i) => (
+              <div key={`med-${i}`} className="row-group">
+                <Select
+                  options={medicationsMaster}
+                  value={medicationsMaster.find(opt => 
+                    opt.value === item.name && opt.code === item.code
+                  )}
+                  onChange={(selected) => handleMedSelect(i, selected)}
+                  placeholder="Seleccionar medicamento"
+                  isClearable
+                />
+                <input
+                  type="number"
+                  value={item.quantity}
+                  onChange={(e) => handleQuantityChange(setMedicamentos, i, e.target.value)}
+                  placeholder="Cantidad"
+                  min="0"
+                />
+              </div>
+            ))}
+          </fieldset>
+          <fieldset className="fieldset-group">
+            <legend>Insumos</legend>
+            {insumos.map((item, i) => (
+              <div key={`insumo-${i}`} className="row-group">
+                <input
+                  type="text"
+                  value={item.name}
+                  onChange={(e) => handleInsumoChange(i, "name", e.target.value)}
+                  placeholder="Nombre"
+                />
+                <input
+                  type="number"
+                  value={item.quantity}
+                  onChange={(e) => handleInsumoChange(i, "quantity", parseInt(e.target.value) || 0)}
+                  placeholder="Cantidad"
+                  min="0"
+                />
+              </div>
+            ))}
+          </fieldset>
+          <div className="button-group">
+            <button type="submit" className="btn-submit">Agregar Entrada</button>
+            <button type="button" onClick={handleClear} className="btn-clear">Limpiar Todo</button>
+          </div>
+        </form>
+        <div className="download-group">
+          <button onClick={handleDownload} className="btn-download">Descargar Archivo</button>
+        </div>
+        {status && <p className="status">{status}</p>}
+      </div>
+      <div className="grid-container">
+        <h2>Datos Cargados</h2>
+        <table className="grid-table">
+          <thead>
+            <tr>
+              {GRID_COLUMNS.map((col) => (
+                <th key={col}>{col}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {gridData.map((row, idx) => (
+              <tr key={idx} onClick={() => handleRowClick(row)}>
+                {GRID_COLUMNS.map((col) => (
+                  <td key={col}>{row[col]}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export default App;
+
+
+================================================
+File: v2.1/main.py
+================================================
+import os
+import sys
+import json
+import math
+import pandas as pd
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
+from io import BytesIO
+from functools import lru_cache
+from fastapi.staticfiles import StaticFiles
+
+# Initialize FastAPI app
+app = FastAPI()
+
+# ========================
+# 1. Configure CORS First
+# ========================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://f881-67-173-101-35.ngrok-free.app",  # Your ngrok URL
+        "http://localhost:3000"  # For local development
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]
+)
+
+# ========================
+# Load Data and Maestro Files
+# ========================
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+# Load Maestro Files
+try:
+    proc_df = pd.read_excel(resource_path("maestro_procedimientos.xlsx"))
+    med_df = pd.read_excel(resource_path("maestro_medicamentos.xlsx"))
+    diag_df = pd.read_excel(resource_path("maestro_diagnosticos.xlsx"))
+except Exception as e:
+    raise HTTPException(status_code=500, detail=f"Error loading maestro files: {e}")
+
+med_df["concat"] = med_df["DESCRIPCIÓN"].astype(str) + " " + med_df["PRESENTACION"].astype(str)
+
+# Global variables and required columns
+DATA_FILE = "data.xlsx"
+REQUIRED_COLUMNS = [
+    'CÓDIGO DEPENDENCIA\n(ESPECIALIDAD)\n',
+    'PLANILLA',
+    'FECHA ANTENCION',
+    'TIPO DE BENEFICIARIO',
+    'CEDULA',
+    'NOMBRE DE BENEFICIARIO',
+    'SEXO-GENERO',
+    'FECHA DE NACIMIENTO BENEFICIARIO',
+    'EDAD BENEFICIARIO',
+    'TIPO DE SERVICIO/ATENCION',
+    'CODIGO',
+    'DESCRIPCIÓN',
+    'OBSERVACIONES',
+    'DIAGNOSTICO PRINCIPAL CIE-10',
+    'DIAGNSITICO SECUNDARIO 1',
+    'DIAGNSITICO SECUNDARIO 2',
+    'CANTIDAD',
+    'VALOR UNITARIO',
+    'DURACION CONSULTA',
+    'PARENTESCO',
+    'IDENTIFICACION AFILIADO',
+    'NOMBRE AFIALIADO',
+    'CODIGO DE DERIVACION',
+    'NUMERO SECUNCIAL DERIVACION',
+    'CONTINGENCIA CUBIERTA',
+    'DIAGNOSTICO PRESUNTIVO O DIFINITIVO',
+    'TIEMPO ANESTESIA',
+    'DIAGNSITICO SECUNDARIO 3',
+    'DIAGNSITICO SECUNDARIO 4',
+    'DIAGNSITICO SECUNDARIO 5',
+    'PORCENTAJE IVA',
+    'VALOR IVA',
+    'VALOR TOTAL',
+    'GASTOS DE GESTIÓN (VALOR\nUNITARIO) / MODIFICADORES NO\nGEOGRÁFICOS (VALOR UNITARIO)',
+    'FECHA DE INGRESO',
+    'FECHA DE EGRESO',
+    'MOTIVO DE EGRESO',
+    'COBERTURA COMPARTIDA\n',
+    'TIPO DE COBERTURA\n',
+    'DISCAPACIDAD CERTIFICADA\n',
+    'TIPO DE PRESTACIÓN\n',
+    'TIPO DE MÉDICO',
+    'FECHA AUTORIZADA PARA INICIO DE ATENCIÓN \n',
+    'OBSERVACIONES\n',
+    'MARCA FINAL (SIEMPRE F)'
+]
+
+if os.path.exists(DATA_FILE):
+    df = pd.read_excel(DATA_FILE)
+    df.columns = df.columns.str.strip()
+    if len(df.columns) != len(REQUIRED_COLUMNS):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Data file missing columns (by index): expected {len(REQUIRED_COLUMNS)} but got {len(df.columns)}"
+        )
+    else:
+        df.columns = REQUIRED_COLUMNS
+else:
+    df = pd.DataFrame(columns=REQUIRED_COLUMNS)
+
+
+# --------------------------
+# Grid columns (for frontend display)
+# --------------------------
+grid_columns = [
+    'CÓDIGO DEPENDENCIA (ESPECIALIDAD)',  # Removed \n
+    'FECHA ANTENCION',
+    'CEDULA',
+    'NOMBRE DE BENEFICIARIO',
+    'CODIGO',
+    'DESCRIPCIÓN',
+    'OBSERVACIONES',
+    'DIAGNOSTICO PRINCIPAL CIE-10',
+    'CANTIDAD',
+    'DIAGNOSTICO PRESUNTIVO O DIFINITIVO',
+    'OBSERVACIONES'  # Removed trailing \n
+]
+
+
+
+# --------------------------
+# PYDANTIC Models
+# --------------------------
+class EntryItem(BaseModel):
+    name: str = ""
+    code: str = ""
+    quantity: int = 0
+
+class NewEntry(BaseModel):
+    paciente: str = ""
+    diagnostico_name: str = ""
+    diagnostico_code: str = ""
+    procedimientos: list[EntryItem] = []
+    medicamentos: list[EntryItem] = []
+    insumos: list[EntryItem] = []
+
+
+# --------------------------
+# API Endpoints
+# --------------------------
+@app.post("/upload/")
+async def upload_file(file: UploadFile = File(...)):
+    global df
+    try:
+        contents = await file.read()
+        file_location = f"./{file.filename}"
+        with open(file_location, "wb") as f:
+            f.write(contents)
+        if file.filename.lower().endswith('.csv'):
+            temp_df = pd.read_csv(BytesIO(contents))
+        else:
+            temp_df = pd.read_excel(BytesIO(contents))
+        temp_df.columns = temp_df.columns.str.strip()
+        if len(temp_df.columns) != len(REQUIRED_COLUMNS):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Expected {len(REQUIRED_COLUMNS)} columns, got {len(temp_df.columns)}"
+            )
+        else:
+            temp_df.columns = REQUIRED_COLUMNS
+        df = temp_df
+        return {"message": "File uploaded and loaded successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/data/")
+def get_data():
+    records = df.to_dict(orient="records")
+    for record in records:
+        for key, value in record.items():
+            if isinstance(value, float) and math.isnan(value):
+                record[key] = None
+    return records
+
+@app.get("/sync/diagnostic/")
+def sync_diagnostic(name: str = None, code: str = None):
+    if name:
+        row = diag_df[diag_df["NOMBRE"].str.lower() == name.lower()]
+    elif code:
+        row = diag_df[diag_df["CÓDIGO"].astype(str) == str(code)]
+    else:
+        raise HTTPException(status_code=400, detail="Provide either name or code")
+    if row.empty:
+        raise HTTPException(status_code=404, detail="Diagnostic not found")
+    return {"name": row.iloc[0]["NOMBRE"], "code": row.iloc[0]["CÓDIGO"]}
+
+@app.get("/search/patients/")
+def search_patients(query: str):
+    results = df[df["NOMBRE DE BENEFICIARIO"].str.contains(query, case=False, na=False)]
+    return results["NOMBRE DE BENEFICIARIO"].unique().tolist()
+
+@app.get("/search/diagnostics/")
+def search_diagnostics(query: str):
+    results = diag_df[diag_df["NOMBRE"].str.contains(query, case=False, na=False)]
+    return results["NOMBRE"].tolist()
+
+@app.get("/search/procedures/")
+def search_procedures(query: str):
+    results = proc_df[proc_df["DESCRIPCIÓN"].str.contains(query, case=False, na=False)]
+    return results["DESCRIPCIÓN"].tolist()
+
+@app.get("/search/medications/")
+def search_medications(query: str):
+    results = med_df[med_df["DESCRIPCIÓN"].str.contains(query, case=False, na=False)]
+    return results["DESCRIPCIÓN"].tolist()
+
+@lru_cache(maxsize=1)
+@app.get("/medications/full/")
+def get_medications_full():
+    code_col = "CODIGO" if "CODIGO" in med_df.columns else "CÓDIGO"
+    return med_df[["DESCRIPCIÓN", code_col]].to_dict(orient="records")
+
+@lru_cache(maxsize=1)
+@app.get("/procedures/full/")
+def get_procedures_full():
+    code_col = "CODIGO" if "CODIGO" in proc_df.columns else "CÓDIGO"
+    return proc_df[["DESCRIPCIÓN", code_col]].to_dict(orient="records")
+
+@lru_cache(maxsize=1)
+@app.get("/patients/full/")
+def get_patients_full():
+    return sorted(df["NOMBRE DE BENEFICIARIO"].dropna().unique().tolist())
+
+@lru_cache(maxsize=1)
+@app.get("/diagnostics/full/")
+def get_diagnostics_full():
+    return diag_df[["NOMBRE", "CÓDIGO"]].to_dict(orient="records")
+
+@app.get("/download/")
+def download_file():
+    if not os.path.exists(DATA_FILE):
+        raise HTTPException(status_code=404, detail="Data file not found")
+    return FileResponse(
+        path=DATA_FILE,
+        filename="data.xlsx",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+@app.post("/add/")
+def add_entry(entry: NewEntry):
+    global df
+    base_row = {
+        "NOMBRE DE BENEFICIARIO": entry.paciente,
+        "DIAGNOSTICO PRINCIPAL CIE-10": entry.diagnostico_code,
+        "DIAGNOSTICO PRESUNTIVO O DIFINITIVO": entry.diagnostico_name,
+        "OBSERVACIONES": ""
+    }
+    new_entries = []
+    for item in entry.procedimientos:
+        if item.name:
+            row = base_row.copy()
+            row["DESCRIPCIÓN"] = item.name
+            row["CODIGO"] = item.code
+            row["CANTIDAD"] = item.quantity
+            new_entries.append(row)
+    for item in entry.medicamentos:
+        if item.name:
+            row = base_row.copy()
+            row["DESCRIPCIÓN"] = item.name
+            row["CODIGO"] = item.code
+            row["CANTIDAD"] = item.quantity
+            new_entries.append(row)
+    for item in entry.insumos:
+        if item.name:
+            row = base_row.copy()
+            row["DESCRIPCIÓN"] = item.name
+            row["CODIGO"] = item.code
+            row["CANTIDAD"] = item.quantity
+            new_entries.append(row)
+    # Insert new entries below the last row with matching patient name and inherit base fields.
+    current_rows = df.to_dict(orient="records")
+    for new_row in new_entries:
+        patient = new_row["NOMBRE DE BENEFICIARIO"]
+        insertion_index = None
+        for i in range(len(current_rows) - 1, -1, -1):
+            if current_rows[i]["NOMBRE DE BENEFICIARIO"] == patient:
+                # Inherit fields from the base row.
+                new_row["CÓDIGO DEPENDENCIA\n(ESPECIALIDAD)\n"] = current_rows[i].get("CÓDIGO DEPENDENCIA\n(ESPECIALIDAD)\n", "")
+                new_row["FECHA ANTENCION"] = current_rows[i].get("FECHA ANTENCION", "")
+                new_row["CEDULA"] = current_rows[i].get("CEDULA", "")
+                insertion_index = i + 1
+                break
+        if insertion_index is None:
+            current_rows.append(new_row)
+        else:
+            current_rows.insert(insertion_index, new_row)
+    df = pd.DataFrame(current_rows)
+    df.to_excel(DATA_FILE, index=False, columns=df.columns.tolist())
+
+    try:
+        wb = load_workbook(DATA_FILE)
+        ws = wb.active
+        header = [cell.value for cell in ws[1]]
+        patient_idx = header.index("NOMBRE DE BENEFICIARIO") + 1
+        date_idx = header.index("FECHA ANTENCION") + 1
+        fill1 = PatternFill(start_color="FF92D050", end_color="FF92D050", fill_type="solid")
+        fill2 = PatternFill(start_color="FF00B0F0", end_color="FF00B0F0", fill_type="solid")
+        current_fill = fill1
+        prev_key = None
+        for r in range(2, ws.max_row + 1):
+            patient_val = ws.cell(row=r, column=patient_idx).value
+            date_val = ws.cell(row=r, column=date_idx).value
+            key = (patient_val, date_val)
+            if key != prev_key:
+                current_fill = fill2 if current_fill == fill1 else fill1
+                prev_key = key
+            for c in range(1, ws.max_column + 1):
+                ws.cell(row=r, column=c).fill = current_fill
+        wb.save(DATA_FILE)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving colored file: {e}")
+    return {"message": "Entry added successfully!"}
+
+@app.post("/save/")
+def save_file():
+    df.to_excel(DATA_FILE, index=False, columns=df.columns.tolist())
+    return {"message": "File saved successfully."}
+
+@app.on_event("shutdown")
+def save_state():
+    state = {"data_file": DATA_FILE}
+    with open("state.json", "w") as f:
+        json.dump(state, f)
+
+# ========================
+# Mount React Frontend LAST
+# ========================
+build_path = os.path.join(os.path.dirname(__file__), "frontend", "build")
+
+if os.path.exists(build_path):
+    app.mount("/", StaticFiles(directory=build_path, html=True), name="static")
+else:
+    print("Warning: React build directory not found. Frontend will not be served.")
+
+
+
+
+# ========================
+# Run the FastAPI app
+# ========================
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+
+
+================================================
+File: v2.1/package.json
+================================================
+{
+  "dependencies": {
+    "axios": "^1.7.9",
+    "react-select": "^5.10.0"
+  }
+}
+
+
+================================================
+File: v2.1/state.json
+================================================
+{"data_file": "data.xlsx"}
+
+================================================
+File: v2.1/yarn.lock
+================================================
+# THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY.
+# yarn lockfile v1
+
+
+"@babel/code-frame@^7.0.0", "@babel/code-frame@^7.26.2":
+  version "7.26.2"
+  resolved "https://registry.yarnpkg.com/@babel/code-frame/-/code-frame-7.26.2.tgz#4b5fab97d33338eff916235055f0ebc21e573a85"
+  integrity sha512-RJlIHRueQgwWitWgF8OdFYGZX328Ax5BCemNGlqHfplnRT9ESi8JkFlvaVYbS+UubVY6dpv87Fs2u5M29iNFVQ==
+  dependencies:
+    "@babel/helper-validator-identifier" "^7.25.9"
+    js-tokens "^4.0.0"
+    picocolors "^1.0.0"
+
+"@babel/generator@^7.26.8":
+  version "7.26.8"
+  resolved "https://registry.yarnpkg.com/@babel/generator/-/generator-7.26.8.tgz#f9c5e770309e12e3099ad8271e52f6caa15442ab"
+  integrity sha512-ef383X5++iZHWAXX0SXQR6ZyQhw/0KtTkrTz61WXRhFM6dhpHulO/RJz79L8S6ugZHJkOOkUrUdxgdF2YiPFnA==
+  dependencies:
+    "@babel/parser" "^7.26.8"
+    "@babel/types" "^7.26.8"
+    "@jridgewell/gen-mapping" "^0.3.5"
+    "@jridgewell/trace-mapping" "^0.3.25"
+    jsesc "^3.0.2"
+
+"@babel/helper-module-imports@^7.16.7":
+  version "7.25.9"
+  resolved "https://registry.yarnpkg.com/@babel/helper-module-imports/-/helper-module-imports-7.25.9.tgz#e7f8d20602ebdbf9ebbea0a0751fb0f2a4141715"
+  integrity sha512-tnUA4RsrmflIM6W6RFTLFSXITtl0wKjgpnLgXyowocVPrbYrLUXSBXDgTs8BlbmIzIdlBySRQjINYs2BAkiLtw==
+  dependencies:
+    "@babel/traverse" "^7.25.9"
+    "@babel/types" "^7.25.9"
+
+"@babel/helper-string-parser@^7.25.9":
+  version "7.25.9"
+  resolved "https://registry.yarnpkg.com/@babel/helper-string-parser/-/helper-string-parser-7.25.9.tgz#1aabb72ee72ed35789b4bbcad3ca2862ce614e8c"
+  integrity sha512-4A/SCr/2KLd5jrtOMFzaKjVtAei3+2r/NChoBNoZ3EyP/+GlhoaEGoWOZUmFmoITP7zOJyHIMm+DYRd8o3PvHA==
+
+"@babel/helper-validator-identifier@^7.25.9":
+  version "7.25.9"
+  resolved "https://registry.yarnpkg.com/@babel/helper-validator-identifier/-/helper-validator-identifier-7.25.9.tgz#24b64e2c3ec7cd3b3c547729b8d16871f22cbdc7"
+  integrity sha512-Ed61U6XJc3CVRfkERJWDz4dJwKe7iLmmJsbOGu9wSloNSFttHV0I8g6UAgb7qnK5ly5bGLPd4oXZlxCdANBOWQ==
+
+"@babel/parser@^7.26.8":
+  version "7.26.8"
+  resolved "https://registry.yarnpkg.com/@babel/parser/-/parser-7.26.8.tgz#deca2b4d99e5e1b1553843b99823f118da6107c2"
+  integrity sha512-TZIQ25pkSoaKEYYaHbbxkfL36GNsQ6iFiBbeuzAkLnXayKR1yP1zFe+NxuZWWsUyvt8icPU9CCq0sgWGXR1GEw==
+  dependencies:
+    "@babel/types" "^7.26.8"
+
+"@babel/runtime@^7.12.0", "@babel/runtime@^7.12.5", "@babel/runtime@^7.18.3", "@babel/runtime@^7.5.5", "@babel/runtime@^7.8.7":
+  version "7.26.7"
+  resolved "https://registry.yarnpkg.com/@babel/runtime/-/runtime-7.26.7.tgz#f4e7fe527cd710f8dc0618610b61b4b060c3c341"
+  integrity sha512-AOPI3D+a8dXnja+iwsUqGRjr1BbZIe771sXdapOtYI531gSqpi92vXivKcq2asu/DFpdl1ceFAKZyRzK2PCVcQ==
+  dependencies:
+    regenerator-runtime "^0.14.0"
+
+"@babel/template@^7.26.8":
+  version "7.26.8"
+  resolved "https://registry.yarnpkg.com/@babel/template/-/template-7.26.8.tgz#db3898f47a17bab2f4c78ec1d0de38527c2ffe19"
+  integrity sha512-iNKaX3ZebKIsCvJ+0jd6embf+Aulaa3vNBqZ41kM7iTWjx5qzWKXGHiJUW3+nTpQ18SG11hdF8OAzKrpXkb96Q==
+  dependencies:
+    "@babel/code-frame" "^7.26.2"
+    "@babel/parser" "^7.26.8"
+    "@babel/types" "^7.26.8"
+
+"@babel/traverse@^7.25.9":
+  version "7.26.8"
+  resolved "https://registry.yarnpkg.com/@babel/traverse/-/traverse-7.26.8.tgz#0a8a9c2b7cc9519eed14275f4fd2278ad46e8cc9"
+  integrity sha512-nic9tRkjYH0oB2dzr/JoGIm+4Q6SuYeLEiIiZDwBscRMYFJ+tMAz98fuel9ZnbXViA2I0HVSSRRK8DW5fjXStA==
+  dependencies:
+    "@babel/code-frame" "^7.26.2"
+    "@babel/generator" "^7.26.8"
+    "@babel/parser" "^7.26.8"
+    "@babel/template" "^7.26.8"
+    "@babel/types" "^7.26.8"
+    debug "^4.3.1"
+    globals "^11.1.0"
+
+"@babel/types@^7.25.9", "@babel/types@^7.26.8":
+  version "7.26.8"
+  resolved "https://registry.yarnpkg.com/@babel/types/-/types-7.26.8.tgz#97dcdc190fab45be7f3dc073e3c11160d677c127"
+  integrity sha512-eUuWapzEGWFEpHFxgEaBG8e3n6S8L3MSu0oda755rOfabWPnh0Our1AozNFVUxGFIhbKgd1ksprsoDGMinTOTA==
+  dependencies:
+    "@babel/helper-string-parser" "^7.25.9"
+    "@babel/helper-validator-identifier" "^7.25.9"
+
+"@emotion/babel-plugin@^11.13.5":
+  version "11.13.5"
+  resolved "https://registry.yarnpkg.com/@emotion/babel-plugin/-/babel-plugin-11.13.5.tgz#eab8d65dbded74e0ecfd28dc218e75607c4e7bc0"
+  integrity sha512-pxHCpT2ex+0q+HH91/zsdHkw/lXd468DIN2zvfvLtPKLLMo6gQj7oLObq8PhkrxOZb/gGCq03S3Z7PDhS8pduQ==
+  dependencies:
+    "@babel/helper-module-imports" "^7.16.7"
+    "@babel/runtime" "^7.18.3"
+    "@emotion/hash" "^0.9.2"
+    "@emotion/memoize" "^0.9.0"
+    "@emotion/serialize" "^1.3.3"
+    babel-plugin-macros "^3.1.0"
+    convert-source-map "^1.5.0"
+    escape-string-regexp "^4.0.0"
+    find-root "^1.1.0"
+    source-map "^0.5.7"
+    stylis "4.2.0"
+
+"@emotion/cache@^11.14.0", "@emotion/cache@^11.4.0":
+  version "11.14.0"
+  resolved "https://registry.yarnpkg.com/@emotion/cache/-/cache-11.14.0.tgz#ee44b26986eeb93c8be82bb92f1f7a9b21b2ed76"
+  integrity sha512-L/B1lc/TViYk4DcpGxtAVbx0ZyiKM5ktoIyafGkH6zg/tj+mA+NE//aPYKG0k8kCHSHVJrpLpcAlOBEXQ3SavA==
+  dependencies:
+    "@emotion/memoize" "^0.9.0"
+    "@emotion/sheet" "^1.4.0"
+    "@emotion/utils" "^1.4.2"
+    "@emotion/weak-memoize" "^0.4.0"
+    stylis "4.2.0"
+
+"@emotion/hash@^0.9.2":
+  version "0.9.2"
+  resolved "https://registry.yarnpkg.com/@emotion/hash/-/hash-0.9.2.tgz#ff9221b9f58b4dfe61e619a7788734bd63f6898b"
+  integrity sha512-MyqliTZGuOm3+5ZRSaaBGP3USLw6+EGykkwZns2EPC5g8jJ4z9OrdZY9apkl3+UP9+sdz76YYkwCKP5gh8iY3g==
+
+"@emotion/memoize@^0.9.0":
+  version "0.9.0"
+  resolved "https://registry.yarnpkg.com/@emotion/memoize/-/memoize-0.9.0.tgz#745969d649977776b43fc7648c556aaa462b4102"
+  integrity sha512-30FAj7/EoJ5mwVPOWhAyCX+FPfMDrVecJAM+Iw9NRoSl4BBAQeqj4cApHHUXOVvIPgLVDsCFoz/hGD+5QQD1GQ==
+
+"@emotion/react@^11.8.1":
+  version "11.14.0"
+  resolved "https://registry.yarnpkg.com/@emotion/react/-/react-11.14.0.tgz#cfaae35ebc67dd9ef4ea2e9acc6cd29e157dd05d"
+  integrity sha512-O000MLDBDdk/EohJPFUqvnp4qnHeYkVP5B0xEG0D/L7cOKP9kefu2DXn8dj74cQfsEzUqh+sr1RzFqiL1o+PpA==
+  dependencies:
+    "@babel/runtime" "^7.18.3"
+    "@emotion/babel-plugin" "^11.13.5"
+    "@emotion/cache" "^11.14.0"
+    "@emotion/serialize" "^1.3.3"
+    "@emotion/use-insertion-effect-with-fallbacks" "^1.2.0"
+    "@emotion/utils" "^1.4.2"
+    "@emotion/weak-memoize" "^0.4.0"
+    hoist-non-react-statics "^3.3.1"
+
+"@emotion/serialize@^1.3.3":
+  version "1.3.3"
+  resolved "https://registry.yarnpkg.com/@emotion/serialize/-/serialize-1.3.3.tgz#d291531005f17d704d0463a032fe679f376509e8"
+  integrity sha512-EISGqt7sSNWHGI76hC7x1CksiXPahbxEOrC5RjmFRJTqLyEK9/9hZvBbiYn70dw4wuwMKiEMCUlR6ZXTSWQqxA==
+  dependencies:
+    "@emotion/hash" "^0.9.2"
+    "@emotion/memoize" "^0.9.0"
+    "@emotion/unitless" "^0.10.0"
+    "@emotion/utils" "^1.4.2"
+    csstype "^3.0.2"
+
+"@emotion/sheet@^1.4.0":
+  version "1.4.0"
+  resolved "https://registry.yarnpkg.com/@emotion/sheet/-/sheet-1.4.0.tgz#c9299c34d248bc26e82563735f78953d2efca83c"
+  integrity sha512-fTBW9/8r2w3dXWYM4HCB1Rdp8NLibOw2+XELH5m5+AkWiL/KqYX6dc0kKYlaYyKjrQ6ds33MCdMPEwgs2z1rqg==
+
+"@emotion/unitless@^0.10.0":
+  version "0.10.0"
+  resolved "https://registry.yarnpkg.com/@emotion/unitless/-/unitless-0.10.0.tgz#2af2f7c7e5150f497bdabd848ce7b218a27cf745"
+  integrity sha512-dFoMUuQA20zvtVTuxZww6OHoJYgrzfKM1t52mVySDJnMSEa08ruEvdYQbhvyu6soU+NeLVd3yKfTfT0NeV6qGg==
+
+"@emotion/use-insertion-effect-with-fallbacks@^1.2.0":
+  version "1.2.0"
+  resolved "https://registry.yarnpkg.com/@emotion/use-insertion-effect-with-fallbacks/-/use-insertion-effect-with-fallbacks-1.2.0.tgz#8a8cb77b590e09affb960f4ff1e9a89e532738bf"
+  integrity sha512-yJMtVdH59sxi/aVJBpk9FQq+OR8ll5GT8oWd57UpeaKEVGab41JWaCFA7FRLoMLloOZF/c/wsPoe+bfGmRKgDg==
+
+"@emotion/utils@^1.4.2":
+  version "1.4.2"
+  resolved "https://registry.yarnpkg.com/@emotion/utils/-/utils-1.4.2.tgz#6df6c45881fcb1c412d6688a311a98b7f59c1b52"
+  integrity sha512-3vLclRofFziIa3J2wDh9jjbkUz9qk5Vi3IZ/FSTKViB0k+ef0fPV7dYrUIugbgupYDx7v9ud/SjrtEP8Y4xLoA==
+
+"@emotion/weak-memoize@^0.4.0":
+  version "0.4.0"
+  resolved "https://registry.yarnpkg.com/@emotion/weak-memoize/-/weak-memoize-0.4.0.tgz#5e13fac887f08c44f76b0ccaf3370eb00fec9bb6"
+  integrity sha512-snKqtPW01tN0ui7yu9rGv69aJXr/a/Ywvl11sUjNtEcRc+ng/mQriFL0wLXMef74iHa/EkftbDzU9F8iFbH+zg==
+
+"@floating-ui/core@^1.6.0":
+  version "1.6.9"
+  resolved "https://registry.yarnpkg.com/@floating-ui/core/-/core-1.6.9.tgz#64d1da251433019dafa091de9b2886ff35ec14e6"
+  integrity sha512-uMXCuQ3BItDUbAMhIXw7UPXRfAlOAvZzdK9BWpE60MCn+Svt3aLn9jsPTi/WNGlRUu2uI0v5S7JiIUsbsvh3fw==
+  dependencies:
+    "@floating-ui/utils" "^0.2.9"
+
+"@floating-ui/dom@^1.0.1":
+  version "1.6.13"
+  resolved "https://registry.yarnpkg.com/@floating-ui/dom/-/dom-1.6.13.tgz#a8a938532aea27a95121ec16e667a7cbe8c59e34"
+  integrity sha512-umqzocjDgNRGTuO7Q8CU32dkHkECqI8ZdMZ5Swb6QAM0t5rnlrN3lGo1hdpscRd3WS8T6DKYK4ephgIH9iRh3w==
+  dependencies:
+    "@floating-ui/core" "^1.6.0"
+    "@floating-ui/utils" "^0.2.9"
+
+"@floating-ui/utils@^0.2.9":
+  version "0.2.9"
+  resolved "https://registry.yarnpkg.com/@floating-ui/utils/-/utils-0.2.9.tgz#50dea3616bc8191fb8e112283b49eaff03e78429"
+  integrity sha512-MDWhGtE+eHw5JW7lq4qhc5yRLS11ERl1c7Z6Xd0a58DozHES6EnNNwUWbMiG4J9Cgj053Bhk8zvlhFYKVhULwg==
+
+"@jridgewell/gen-mapping@^0.3.5":
+  version "0.3.8"
+  resolved "https://registry.yarnpkg.com/@jridgewell/gen-mapping/-/gen-mapping-0.3.8.tgz#4f0e06362e01362f823d348f1872b08f666d8142"
+  integrity sha512-imAbBGkb+ebQyxKgzv5Hu2nmROxoDOXHh80evxdoXNOrvAnVx7zimzc1Oo5h9RlfV4vPXaE2iM5pOFbvOCClWA==
+  dependencies:
+    "@jridgewell/set-array" "^1.2.1"
+    "@jridgewell/sourcemap-codec" "^1.4.10"
+    "@jridgewell/trace-mapping" "^0.3.24"
+
+"@jridgewell/resolve-uri@^3.1.0":
+  version "3.1.2"
+  resolved "https://registry.yarnpkg.com/@jridgewell/resolve-uri/-/resolve-uri-3.1.2.tgz#7a0ee601f60f99a20c7c7c5ff0c80388c1189bd6"
+  integrity sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==
+
+"@jridgewell/set-array@^1.2.1":
+  version "1.2.1"
+  resolved "https://registry.yarnpkg.com/@jridgewell/set-array/-/set-array-1.2.1.tgz#558fb6472ed16a4c850b889530e6b36438c49280"
+  integrity sha512-R8gLRTZeyp03ymzP/6Lil/28tGeGEzhx1q2k703KGWRAI1VdvPIXdG70VJc2pAMw3NA6JKL5hhFu1sJX0Mnn/A==
+
+"@jridgewell/sourcemap-codec@^1.4.10", "@jridgewell/sourcemap-codec@^1.4.14":
+  version "1.5.0"
+  resolved "https://registry.yarnpkg.com/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.5.0.tgz#3188bcb273a414b0d215fd22a58540b989b9409a"
+  integrity sha512-gv3ZRaISU3fjPAgNsriBRqGWQL6quFx04YMPW/zD8XMLsU32mhCCbfbO6KZFLjvYpCZ8zyDEgqsgf+PwPaM7GQ==
+
+"@jridgewell/trace-mapping@^0.3.24", "@jridgewell/trace-mapping@^0.3.25":
+  version "0.3.25"
+  resolved "https://registry.yarnpkg.com/@jridgewell/trace-mapping/-/trace-mapping-0.3.25.tgz#15f190e98895f3fc23276ee14bc76b675c2e50f0"
+  integrity sha512-vNk6aEwybGtawWmy/PzwnGDOjCkLWSD2wqvjGGAgOAwCGWySYXfYoxt00IJkTF+8Lb57DwOb3Aa0o9CApepiYQ==
+  dependencies:
+    "@jridgewell/resolve-uri" "^3.1.0"
+    "@jridgewell/sourcemap-codec" "^1.4.14"
+
+"@types/parse-json@^4.0.0":
+  version "4.0.2"
+  resolved "https://registry.yarnpkg.com/@types/parse-json/-/parse-json-4.0.2.tgz#5950e50960793055845e956c427fc2b0d70c5239"
+  integrity sha512-dISoDXWWQwUquiKsyZ4Ng+HX2KsPL7LyHKHQwgGFEA3IaKac4Obd+h2a/a6waisAoepJlBcx9paWqjA8/HVjCw==
+
+"@types/react-transition-group@^4.4.0":
+  version "4.4.12"
+  resolved "https://registry.yarnpkg.com/@types/react-transition-group/-/react-transition-group-4.4.12.tgz#b5d76568485b02a307238270bfe96cb51ee2a044"
+  integrity sha512-8TV6R3h2j7a91c+1DXdJi3Syo69zzIZbz7Lg5tORM5LEJG7X/E6a1V3drRyBRZq7/utz7A+c4OgYLiLcYGHG6w==
+
+asynckit@^0.4.0:
+  version "0.4.0"
+  resolved "https://registry.yarnpkg.com/asynckit/-/asynckit-0.4.0.tgz#c79ed97f7f34cb8f2ba1bc9790bcc366474b4b79"
+  integrity sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==
+
+axios@^1.7.9:
+  version "1.7.9"
+  resolved "https://registry.yarnpkg.com/axios/-/axios-1.7.9.tgz#d7d071380c132a24accda1b2cfc1535b79ec650a"
+  integrity sha512-LhLcE7Hbiryz8oMDdDptSrWowmB4Bl6RCt6sIJKpRB4XtVf0iEgewX3au/pJqm+Py1kCASkb/FFKjxQaLtxJvw==
+  dependencies:
+    follow-redirects "^1.15.6"
+    form-data "^4.0.0"
+    proxy-from-env "^1.1.0"
+
+babel-plugin-macros@^3.1.0:
+  version "3.1.0"
+  resolved "https://registry.yarnpkg.com/babel-plugin-macros/-/babel-plugin-macros-3.1.0.tgz#9ef6dc74deb934b4db344dc973ee851d148c50c1"
+  integrity sha512-Cg7TFGpIr01vOQNODXOOaGz2NpCU5gl8x1qJFbb6hbZxR7XrcE2vtbAsTAbJ7/xwJtUuJEw8K8Zr/AE0LHlesg==
+  dependencies:
+    "@babel/runtime" "^7.12.5"
+    cosmiconfig "^7.0.0"
+    resolve "^1.19.0"
+
+callsites@^3.0.0:
+  version "3.1.0"
+  resolved "https://registry.yarnpkg.com/callsites/-/callsites-3.1.0.tgz#b3630abd8943432f54b3f0519238e33cd7df2f73"
+  integrity sha512-P8BjAsXvZS+VIDUI11hHCQEv74YT67YUi5JJFNWIqL235sBmjX4+qx9Muvls5ivyNENctx46xQLQ3aTuE7ssaQ==
+
+combined-stream@^1.0.8:
+  version "1.0.8"
+  resolved "https://registry.yarnpkg.com/combined-stream/-/combined-stream-1.0.8.tgz#c3d45a8b34fd730631a110a8a2520682b31d5a7f"
+  integrity sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==
+  dependencies:
+    delayed-stream "~1.0.0"
+
+convert-source-map@^1.5.0:
+  version "1.9.0"
+  resolved "https://registry.yarnpkg.com/convert-source-map/-/convert-source-map-1.9.0.tgz#7faae62353fb4213366d0ca98358d22e8368b05f"
+  integrity sha512-ASFBup0Mz1uyiIjANan1jzLQami9z1PoYSZCiiYW2FczPbenXc45FZdBZLzOT+r6+iciuEModtmCti+hjaAk0A==
+
+cosmiconfig@^7.0.0:
+  version "7.1.0"
+  resolved "https://registry.yarnpkg.com/cosmiconfig/-/cosmiconfig-7.1.0.tgz#1443b9afa596b670082ea46cbd8f6a62b84635f6"
+  integrity sha512-AdmX6xUzdNASswsFtmwSt7Vj8po9IuqXm0UXz7QKPuEUmPB4XyjGfaAr2PSuELMwkRMVH1EpIkX5bTZGRB3eCA==
+  dependencies:
+    "@types/parse-json" "^4.0.0"
+    import-fresh "^3.2.1"
+    parse-json "^5.0.0"
+    path-type "^4.0.0"
+    yaml "^1.10.0"
+
+csstype@^3.0.2:
+  version "3.1.3"
+  resolved "https://registry.yarnpkg.com/csstype/-/csstype-3.1.3.tgz#d80ff294d114fb0e6ac500fbf85b60137d7eff81"
+  integrity sha512-M1uQkMl8rQK/szD0LNhtqxIPLpimGm8sOBwU7lLnCpSbTyY3yeU1Vc7l4KT5zT4s/yOxHH5O7tIuuLOCnLADRw==
+
+debug@^4.3.1:
+  version "4.4.0"
+  resolved "https://registry.yarnpkg.com/debug/-/debug-4.4.0.tgz#2b3f2aea2ffeb776477460267377dc8710faba8a"
+  integrity sha512-6WTZ/IxCY/T6BALoZHaE4ctp9xm+Z5kY/pzYaCHRFeyVhojxlrm+46y68HA6hr0TcwEssoxNiDEUJQjfPZ/RYA==
+  dependencies:
+    ms "^2.1.3"
+
+delayed-stream@~1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/delayed-stream/-/delayed-stream-1.0.0.tgz#df3ae199acadfb7d440aaae0b29e2272b24ec619"
+  integrity sha512-ZySD7Nf91aLB0RxL4KGrKHBXl7Eds1DAmEdcoVawXnLD7SDhpNgtuII2aAkg7a7QS41jxPSZ17p4VdGnMHk3MQ==
+
+dom-helpers@^5.0.1:
+  version "5.2.1"
+  resolved "https://registry.yarnpkg.com/dom-helpers/-/dom-helpers-5.2.1.tgz#d9400536b2bf8225ad98fe052e029451ac40e902"
+  integrity sha512-nRCa7CK3VTrM2NmGkIy4cbK7IZlgBE/PYMn55rrXefr5xXDP0LdtfPnblFDoVdcAfslJ7or6iqAUnx0CCGIWQA==
+  dependencies:
+    "@babel/runtime" "^7.8.7"
+    csstype "^3.0.2"
+
+error-ex@^1.3.1:
+  version "1.3.2"
+  resolved "https://registry.yarnpkg.com/error-ex/-/error-ex-1.3.2.tgz#b4ac40648107fdcdcfae242f428bea8a14d4f1bf"
+  integrity sha512-7dFHNmqeFSEt2ZBsCriorKnn3Z2pj+fd9kmI6QoWw4//DL+icEBfc0U7qJCisqrTsKTjw4fNFy2pW9OqStD84g==
+  dependencies:
+    is-arrayish "^0.2.1"
+
+escape-string-regexp@^4.0.0:
+  version "4.0.0"
+  resolved "https://registry.yarnpkg.com/escape-string-regexp/-/escape-string-regexp-4.0.0.tgz#14ba83a5d373e3d311e5afca29cf5bfad965bf34"
+  integrity sha512-TtpcNJ3XAzx3Gq8sWRzJaVajRs0uVxA2YAkdb1jm2YkPz4G6egUFAyA3n5vtEIZefPk5Wa4UXbKuS5fKkJWdgA==
+
+find-root@^1.1.0:
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/find-root/-/find-root-1.1.0.tgz#abcfc8ba76f708c42a97b3d685b7e9450bfb9ce4"
+  integrity sha512-NKfW6bec6GfKc0SGx1e07QZY9PE99u0Bft/0rzSD5k3sO/vwkVUpDUKVm5Gpp5Ue3YfShPFTX2070tDs5kB9Ng==
+
+follow-redirects@^1.15.6:
+  version "1.15.9"
+  resolved "https://registry.yarnpkg.com/follow-redirects/-/follow-redirects-1.15.9.tgz#a604fa10e443bf98ca94228d9eebcc2e8a2c8ee1"
+  integrity sha512-gew4GsXizNgdoRyqmyfMHyAmXsZDk6mHkSxZFCzW9gwlbtOW44CDtYavM+y+72qD/Vq2l550kMF52DT8fOLJqQ==
+
+form-data@^4.0.0:
+  version "4.0.1"
+  resolved "https://registry.yarnpkg.com/form-data/-/form-data-4.0.1.tgz#ba1076daaaa5bfd7e99c1a6cb02aa0a5cff90d48"
+  integrity sha512-tzN8e4TX8+kkxGPK8D5u0FNmjPUjw3lwC9lSLxxoB/+GtsJG91CO8bSWy73APlgAZzZbXEYZJuxjkHH2w+Ezhw==
+  dependencies:
+    asynckit "^0.4.0"
+    combined-stream "^1.0.8"
+    mime-types "^2.1.12"
+
+function-bind@^1.1.2:
+  version "1.1.2"
+  resolved "https://registry.yarnpkg.com/function-bind/-/function-bind-1.1.2.tgz#2c02d864d97f3ea6c8830c464cbd11ab6eab7a1c"
+  integrity sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==
+
+globals@^11.1.0:
+  version "11.12.0"
+  resolved "https://registry.yarnpkg.com/globals/-/globals-11.12.0.tgz#ab8795338868a0babd8525758018c2a7eb95c42e"
+  integrity sha512-WOBp/EEGUiIsJSp7wcv/y6MO+lV9UoncWqxuFfm8eBwzWNgyfBd6Gz+IeKQ9jCmyhoH99g15M3T+QaVHFjizVA==
+
+hasown@^2.0.2:
+  version "2.0.2"
+  resolved "https://registry.yarnpkg.com/hasown/-/hasown-2.0.2.tgz#003eaf91be7adc372e84ec59dc37252cedb80003"
+  integrity sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==
+  dependencies:
+    function-bind "^1.1.2"
+
+hoist-non-react-statics@^3.3.1:
+  version "3.3.2"
+  resolved "https://registry.yarnpkg.com/hoist-non-react-statics/-/hoist-non-react-statics-3.3.2.tgz#ece0acaf71d62c2969c2ec59feff42a4b1a85b45"
+  integrity sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==
+  dependencies:
+    react-is "^16.7.0"
+
+import-fresh@^3.2.1:
+  version "3.3.1"
+  resolved "https://registry.yarnpkg.com/import-fresh/-/import-fresh-3.3.1.tgz#9cecb56503c0ada1f2741dbbd6546e4b13b57ccf"
+  integrity sha512-TR3KfrTZTYLPB6jUjfx6MF9WcWrHL9su5TObK4ZkYgBdWKPOFoSoQIdEuTuR82pmtxH2spWG9h6etwfr1pLBqQ==
+  dependencies:
+    parent-module "^1.0.0"
+    resolve-from "^4.0.0"
+
+is-arrayish@^0.2.1:
+  version "0.2.1"
+  resolved "https://registry.yarnpkg.com/is-arrayish/-/is-arrayish-0.2.1.tgz#77c99840527aa8ecb1a8ba697b80645a7a926a9d"
+  integrity sha512-zz06S8t0ozoDXMG+ube26zeCTNXcKIPJZJi8hBrF4idCLms4CG9QtK7qBl1boi5ODzFpjswb5JPmHCbMpjaYzg==
+
+is-core-module@^2.16.0:
+  version "2.16.1"
+  resolved "https://registry.yarnpkg.com/is-core-module/-/is-core-module-2.16.1.tgz#2a98801a849f43e2add644fbb6bc6229b19a4ef4"
+  integrity sha512-UfoeMA6fIJ8wTYFEUjelnaGI67v6+N7qXJEvQuIGa99l4xsCruSYOVSQ0uPANn4dAzm8lkYPaKLrrijLq7x23w==
+  dependencies:
+    hasown "^2.0.2"
+
+"js-tokens@^3.0.0 || ^4.0.0", js-tokens@^4.0.0:
+  version "4.0.0"
+  resolved "https://registry.yarnpkg.com/js-tokens/-/js-tokens-4.0.0.tgz#19203fb59991df98e3a287050d4647cdeaf32499"
+  integrity sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==
+
+jsesc@^3.0.2:
+  version "3.1.0"
+  resolved "https://registry.yarnpkg.com/jsesc/-/jsesc-3.1.0.tgz#74d335a234f67ed19907fdadfac7ccf9d409825d"
+  integrity sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA==
+
+json-parse-even-better-errors@^2.3.0:
+  version "2.3.1"
+  resolved "https://registry.yarnpkg.com/json-parse-even-better-errors/-/json-parse-even-better-errors-2.3.1.tgz#7c47805a94319928e05777405dc12e1f7a4ee02d"
+  integrity sha512-xyFwyhro/JEof6Ghe2iz2NcXoj2sloNsWr/XsERDK/oiPCfaNhl5ONfp+jQdAZRQQ0IJWNzH9zIZF7li91kh2w==
+
+lines-and-columns@^1.1.6:
+  version "1.2.4"
+  resolved "https://registry.yarnpkg.com/lines-and-columns/-/lines-and-columns-1.2.4.tgz#eca284f75d2965079309dc0ad9255abb2ebc1632"
+  integrity sha512-7ylylesZQ/PV29jhEDl3Ufjo6ZX7gCqJr5F7PKrqc93v7fzSymt1BpwEU8nAUXs8qzzvqhbjhK5QZg6Mt/HkBg==
+
+loose-envify@^1.4.0:
+  version "1.4.0"
+  resolved "https://registry.yarnpkg.com/loose-envify/-/loose-envify-1.4.0.tgz#71ee51fa7be4caec1a63839f7e682d8132d30caf"
+  integrity sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==
+  dependencies:
+    js-tokens "^3.0.0 || ^4.0.0"
+
+memoize-one@^6.0.0:
+  version "6.0.0"
+  resolved "https://registry.yarnpkg.com/memoize-one/-/memoize-one-6.0.0.tgz#b2591b871ed82948aee4727dc6abceeeac8c1045"
+  integrity sha512-rkpe71W0N0c0Xz6QD0eJETuWAJGnJ9afsl1srmwPrI+yBCkge5EycXXbYRyvL29zZVUWQCY7InPRCv3GDXuZNw==
+
+mime-db@1.52.0:
+  version "1.52.0"
+  resolved "https://registry.yarnpkg.com/mime-db/-/mime-db-1.52.0.tgz#bbabcdc02859f4987301c856e3387ce5ec43bf70"
+  integrity sha512-sPU4uV7dYlvtWJxwwxHD0PuihVNiE7TyAbQ5SWxDCB9mUYvOgroQOwYQQOKPJ8CIbE+1ETVlOoK1UC2nU3gYvg==
+
+mime-types@^2.1.12:
+  version "2.1.35"
+  resolved "https://registry.yarnpkg.com/mime-types/-/mime-types-2.1.35.tgz#381a871b62a734450660ae3deee44813f70d959a"
+  integrity sha512-ZDY+bPm5zTTF+YpCrAU9nK0UgICYPT0QtT1NZWFv4s++TNkcgVaT0g6+4R2uI4MjQjzysHB1zxuWL50hzaeXiw==
+  dependencies:
+    mime-db "1.52.0"
+
+ms@^2.1.3:
+  version "2.1.3"
+  resolved "https://registry.yarnpkg.com/ms/-/ms-2.1.3.tgz#574c8138ce1d2b5861f0b44579dbadd60c6615b2"
+  integrity sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==
+
+object-assign@^4.1.1:
+  version "4.1.1"
+  resolved "https://registry.yarnpkg.com/object-assign/-/object-assign-4.1.1.tgz#2109adc7965887cfc05cbbd442cac8bfbb360863"
+  integrity sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==
+
+parent-module@^1.0.0:
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/parent-module/-/parent-module-1.0.1.tgz#691d2709e78c79fae3a156622452d00762caaaa2"
+  integrity sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g==
+  dependencies:
+    callsites "^3.0.0"
+
+parse-json@^5.0.0:
+  version "5.2.0"
+  resolved "https://registry.yarnpkg.com/parse-json/-/parse-json-5.2.0.tgz#c76fc66dee54231c962b22bcc8a72cf2f99753cd"
+  integrity sha512-ayCKvm/phCGxOkYRSCM82iDwct8/EonSEgCSxWxD7ve6jHggsFl4fZVQBPRNgQoKiuV/odhFrGzQXZwbifC8Rg==
+  dependencies:
+    "@babel/code-frame" "^7.0.0"
+    error-ex "^1.3.1"
+    json-parse-even-better-errors "^2.3.0"
+    lines-and-columns "^1.1.6"
+
+path-parse@^1.0.7:
+  version "1.0.7"
+  resolved "https://registry.yarnpkg.com/path-parse/-/path-parse-1.0.7.tgz#fbc114b60ca42b30d9daf5858e4bd68bbedb6735"
+  integrity sha512-LDJzPVEEEPR+y48z93A0Ed0yXb8pAByGWo/k5YYdYgpY2/2EsOsksJrq7lOHxryrVOn1ejG6oAp8ahvOIQD8sw==
+
+path-type@^4.0.0:
+  version "4.0.0"
+  resolved "https://registry.yarnpkg.com/path-type/-/path-type-4.0.0.tgz#84ed01c0a7ba380afe09d90a8c180dcd9d03043b"
+  integrity sha512-gDKb8aZMDeD/tZWs9P6+q0J9Mwkdl6xMV8TjnGP3qJVJ06bdMgkbBlLU8IdfOsIsFz2BW1rNVT3XuNEl8zPAvw==
+
+picocolors@^1.0.0:
+  version "1.1.1"
+  resolved "https://registry.yarnpkg.com/picocolors/-/picocolors-1.1.1.tgz#3d321af3eab939b083c8f929a1d12cda81c26b6b"
+  integrity sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==
+
+prop-types@^15.6.0, prop-types@^15.6.2:
+  version "15.8.1"
+  resolved "https://registry.yarnpkg.com/prop-types/-/prop-types-15.8.1.tgz#67d87bf1a694f48435cf332c24af10214a3140b5"
+  integrity sha512-oj87CgZICdulUohogVAR7AjlC0327U4el4L6eAvOqCeudMDVU0NThNaV+b9Df4dXgSP1gXMTnPdhfe/2qDH5cg==
+  dependencies:
+    loose-envify "^1.4.0"
+    object-assign "^4.1.1"
+    react-is "^16.13.1"
+
+proxy-from-env@^1.1.0:
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/proxy-from-env/-/proxy-from-env-1.1.0.tgz#e102f16ca355424865755d2c9e8ea4f24d58c3e2"
+  integrity sha512-D+zkORCbA9f1tdWRK0RaCR3GPv50cMxcrz4X8k5LTSUD1Dkw47mKJEZQNunItRTkWwgtaUSo1RVFRIG9ZXiFYg==
+
+react-is@^16.13.1, react-is@^16.7.0:
+  version "16.13.1"
+  resolved "https://registry.yarnpkg.com/react-is/-/react-is-16.13.1.tgz#789729a4dc36de2999dc156dd6c1d9c18cea56a4"
+  integrity sha512-24e6ynE2H+OKt4kqsOvNd8kBpV65zoxbA4BVsEOB3ARVWQki/DHzaUoC5KuON/BiccDaCCTZBuOcfZs70kR8bQ==
+
+react-select@^5.10.0:
+  version "5.10.0"
+  resolved "https://registry.yarnpkg.com/react-select/-/react-select-5.10.0.tgz#9b5f4544cfecdfc744184b87651468ee0fb6e172"
+  integrity sha512-k96gw+i6N3ExgDwPIg0lUPmexl1ygPe6u5BdQFNBhkpbwroIgCNXdubtIzHfThYXYYTubwOBafoMnn7ruEP1xA==
+  dependencies:
+    "@babel/runtime" "^7.12.0"
+    "@emotion/cache" "^11.4.0"
+    "@emotion/react" "^11.8.1"
+    "@floating-ui/dom" "^1.0.1"
+    "@types/react-transition-group" "^4.4.0"
+    memoize-one "^6.0.0"
+    prop-types "^15.6.0"
+    react-transition-group "^4.3.0"
+    use-isomorphic-layout-effect "^1.2.0"
+
+react-transition-group@^4.3.0:
+  version "4.4.5"
+  resolved "https://registry.yarnpkg.com/react-transition-group/-/react-transition-group-4.4.5.tgz#e53d4e3f3344da8521489fbef8f2581d42becdd1"
+  integrity sha512-pZcd1MCJoiKiBR2NRxeCRg13uCXbydPnmB4EOeRrY7480qNWO8IIgQG6zlDkm6uRMsURXPuKq0GWtiM59a5Q6g==
+  dependencies:
+    "@babel/runtime" "^7.5.5"
+    dom-helpers "^5.0.1"
+    loose-envify "^1.4.0"
+    prop-types "^15.6.2"
+
+regenerator-runtime@^0.14.0:
+  version "0.14.1"
+  resolved "https://registry.yarnpkg.com/regenerator-runtime/-/regenerator-runtime-0.14.1.tgz#356ade10263f685dda125100cd862c1db895327f"
+  integrity sha512-dYnhHh0nJoMfnkZs6GmmhFknAGRrLznOu5nc9ML+EJxGvrx6H7teuevqVqCuPcPK//3eDrrjQhehXVx9cnkGdw==
+
+resolve-from@^4.0.0:
+  version "4.0.0"
+  resolved "https://registry.yarnpkg.com/resolve-from/-/resolve-from-4.0.0.tgz#4abcd852ad32dd7baabfe9b40e00a36db5f392e6"
+  integrity sha512-pb/MYmXstAkysRFx8piNI1tGFNQIFA3vkE3Gq4EuA1dF6gHp/+vgZqsCGJapvy8N3Q+4o7FwvquPJcnZ7RYy4g==
+
+resolve@^1.19.0:
+  version "1.22.10"
+  resolved "https://registry.yarnpkg.com/resolve/-/resolve-1.22.10.tgz#b663e83ffb09bbf2386944736baae803029b8b39"
+  integrity sha512-NPRy+/ncIMeDlTAsuqwKIiferiawhefFJtkNSW0qZJEqMEb+qBt/77B/jGeeek+F0uOeN05CDa6HXbbIgtVX4w==
+  dependencies:
+    is-core-module "^2.16.0"
+    path-parse "^1.0.7"
+    supports-preserve-symlinks-flag "^1.0.0"
+
+source-map@^0.5.7:
+  version "0.5.7"
+  resolved "https://registry.yarnpkg.com/source-map/-/source-map-0.5.7.tgz#8a039d2d1021d22d1ea14c80d8ea468ba2ef3fcc"
+  integrity sha512-LbrmJOMUSdEVxIKvdcJzQC+nQhe8FUZQTXQy6+I75skNgn3OoQ0DZA8YnFa7gp8tqtL3KPf1kmo0R5DoApeSGQ==
+
+stylis@4.2.0:
+  version "4.2.0"
+  resolved "https://registry.yarnpkg.com/stylis/-/stylis-4.2.0.tgz#79daee0208964c8fe695a42fcffcac633a211a51"
+  integrity sha512-Orov6g6BB1sDfYgzWfTHDOxamtX1bE/zo104Dh9e6fqJ3PooipYyfJ0pUmrZO2wAvO8YbEyeFrkV91XTsGMSrw==
+
+supports-preserve-symlinks-flag@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/supports-preserve-symlinks-flag/-/supports-preserve-symlinks-flag-1.0.0.tgz#6eda4bd344a3c94aea376d4cc31bc77311039e09"
+  integrity sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==
+
+use-isomorphic-layout-effect@^1.2.0:
+  version "1.2.0"
+  resolved "https://registry.yarnpkg.com/use-isomorphic-layout-effect/-/use-isomorphic-layout-effect-1.2.0.tgz#afb292eb284c39219e8cb8d3d62d71999361a21d"
+  integrity sha512-q6ayo8DWoPZT0VdG4u3D3uxcgONP3Mevx2i2b0434cwWBoL+aelL1DzkXI6w3PhTZzUeR2kaVlZn70iCiseP6w==
+
+yaml@^1.10.0:
+  version "1.10.2"
+  resolved "https://registry.yarnpkg.com/yaml/-/yaml-1.10.2.tgz#2301c5ffbf12b467de8da2333a459e29e7920e4b"
+  integrity sha512-r3vXyErRCYJ7wg28yvBY5VSoAF8ZvlcW9/BwUzEtUsjvX/DKs24dIkuwjtuprwJJHsbyUbLApepYTR1BN4uHrg==
+
+
+================================================
+File: v2.2/README.md
+================================================
+# v2 App: FastAPI + React
+
+This project is a professional-level web application that combines a FastAPI backend with a React frontend. The app lets you:
+
+- **Upload a main Excel file** ("archivo main.xlsx") that contains patient data.
+- **Display a grid view** of the patient records once the file is uploaded.
+- **Add new entries** using 5 input fields each for procedures, medications, and supplies.
+- **Synchronize diagnostic fields** so that the diagnostic name and code update in tandem (each in its own box).
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+  - [Backend Setup](#backend-setup)
+  - [Frontend Setup](#frontend-setup)
+- [Running the Application](#running-the-application)
+  - [Start the FastAPI Backend](#start-the-fastapi-backend)
+  - [Start the React Frontend](#start-the-react-frontend)
+- [API Endpoints](#api-endpoints)
+- [Additional Notes](#additional-notes)
+
+## Overview
+
+The v2 App consists of two components:
+
+1. **FastAPI Backend (`main.py`):**
+   - Loads and saves patient data from an Excel file.
+   - Provides endpoints for:
+     - Uploading the main file.
+     - Retrieving grid data.
+     - Autocomplete searches for patients, diagnostics, procedures, and medications.
+     - Synchronizing diagnostic fields (by name or code).
+     - Adding new entries (with 5 fields each for procedures, medications, and supplies).
+   - Saves the Excel file using the same column names and applies colored fills based on patient and date.
+
+2. **React Frontend (in the `frontend/` directory):**
+   - Provides a user interface to:
+     - Upload the main file.
+     - View the grid data of patient records.
+     - Enter new entries with separate fields for:
+       - Patient name.
+       - Diagnostic name and diagnostic code (which sync with each other).
+       - Five rows for procedures, medications, and supplies (each with fields for name, code, and quantity).
+
+## Prerequisites
+
+### Backend
+- Python 3.9+
+- Required Python packages:
+  - fastapi
+  - uvicorn
+  - pandas
+  - openpyxl
+  - pydantic
+  - python-multipart
+
+### Frontend
+- Node.js (latest LTS recommended)
+- Yarn (or npm; these instructions use Yarn)
+
+## Installation
+
+### Backend Setup
+
+1. **Place your backend files** (including `main.py`, `maestro_procedimientos.xlsx`, `maestro_medicamentos.xlsx`, and `maestro_diagnosticos.xlsx`) in a folder (e.g., `backend/`).
+
+2. **Create and activate a Python virtual environment (optional but recommended):**
+
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install the required Python packages:**
+
+   ```bash
+   pip install fastapi uvicorn pandas openpyxl python-multipart
+   ```
+
+### Frontend Setup
+
+1. **Install Node.js and Yarn:**
+   - Download Node.js from [nodejs.org](https://nodejs.org/).
+   - Install Yarn globally (if not already installed):
+
+     ```bash
+     npm install -g yarn
+     ```
+
+2. **Create a new React app:**
+
+   ```bash
+   yarn create react-app frontend
+   ```
+
+3. **Navigate to the React project folder:**
+
+   ```bash
+   cd frontend
+   ```
+
+4. **Install required dependencies:**
+
+   ```bash
+   yarn add axios react-select
+   ```
+
+5. **Replace the default files:**
+   - Replace `src/App.js` with your custom React code.
+   - Replace `src/App.css` with your custom CSS.
+   - (Optional) Delete unused files like `logo.svg`.
+
+
+6. **Build the React app for staticfrom FastAPI**
+
+    ```bash
+    yarn build
+    ```
+
+
+## Running the Application
+
+### Start the FastAPI Backend
+
+1. **Navigate to your backend folder** (where `main.py` is located).
+
+2. **Start the server using uvicorn:**
+
+   ```bash
+   uvicorn main:app --reload
+   ```
+
+3. **Test the backend API:**  
+   Open your browser and visit [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) to see interactive API documentation.
+
+### Start the React Frontend
+
+1. **Navigate to the `frontend` folder:**
+
+   ```bash
+   cd frontend
+   ```
+
+2. **Start the development server:**
+
+   ```bash
+   yarn start
+   ```
+
+3. The React app should open automatically in your browser at [http://localhost:3000](http://localhost:3000).
+
+## API Endpoints
+
+- **POST** `/upload/`  
+  Uploads the main Excel file and loads patient data.
+
+- **GET** `/data/`  
+  Returns all patient data for the grid view.
+
+- **GET** `/sync/diagnostic/`  
+  Synchronizes diagnostic fields (accepts query parameters `name` or `code`).
+
+- **GET** `/search/patients/`  
+  Searches for patients by name.
+
+- **GET** `/search/diagnostics/`  
+  Searches for diagnostics by name.
+
+- **GET** `/search/procedures/`  
+  Searches for procedures by name.
+
+- **GET** `/search/medications/`  
+  Searches for medications by name.
+
+- **POST** `/add/`  
+  Adds a new entry (with 5 fields each for procedures, medications, and supplies).
+
+- **POST** `/save/`  
+  Saves the current data to the Excel file with colored rows.
+
+## Additional Notes
+
+- **Diagnostic Sync:**  
+  The `/sync/diagnostic/` endpoint allows you to provide either a diagnostic name or code; the endpoint returns both values so that the two input fields can sync automatically.
+
+- **Grid View:**  
+  The `/data/` endpoint provides the data for the grid view. The React frontend displays this in a table after a file upload.
+
+- **Deployment:**  
+  For local development, run the FastAPI backend and React frontend on your computer. For production, consider hosting the backend on a cloud service and deploying the React build on a service such as Vercel or Netlify.
+
+Enjoy your v2 App!
+
+
+================================================
+File: v2.2/App.css
+================================================
+/* App.css */
+body {
+  background-color: #f5f5f5;
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: row;
+  min-height: 100vh;
+}
+
+.form-container {
+  flex: 1;
+  padding: 20px;
+  background-color: #ffffff;
+  overflow-y: auto;
+  max-height: 100vh;
+}
+
+.grid-container {
+  flex: 1;
+  padding: 20px;
+  background-color: #ffffff;
+  overflow-y: auto;
+  max-height: 100vh;
+}
+
+h1, h2 {
+  text-align: center;
+  color: #007bff;
+}
+
+.upload-section {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.form-group, .fieldset-group {
+  margin-bottom: 15px;
+}
+
+.diagnostico-group .diagnostico-fields {
+  display: flex;
+  gap: 10px;
+}
+
+.row-group {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+/* Nombre field (Select or input) - 75% width */
+.row-group > *:first-child {
+  flex: 3;
+  min-width: 0;
+}
+
+/* Cantidad field - 25% width */
+.row-group > *:last-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-group input {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.react-select__control {
+  width: 100%;
+  background-color: white;
+}
+
+.btn-submit,
+.btn-download {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 10px;
+  width: 100%;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.btn-submit:hover,
+.btn-download:hover {
+  background-color: #0056b3;
+}
+
+/* Clear button styling */
+.btn-clear {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 10px;
+  width: 100%;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.btn-clear:hover {
+  background-color: #c82333;
+}
+
+/* Delete button styling */
+.btn-delete {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 10px;
+  width: auto;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+
+.btn-delete:hover {
+  background-color: #c82333;
+}
+
+.grid-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.grid-table th,
+.grid-table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: center;
+}
+
+.grid-table th {
+  background-color: #007bff;
+  color: white;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.grid-table tbody tr:nth-child(odd) {
+  background-color: #f9f9f9;
+}
+
+.status {
+  text-align: center;
+  font-weight: bold;
+  color: #333;
+  margin-top: 10px;
+}
+
+/* Spinner styles */
+.spinner {
+  border: 4px solid #f3f3f3; /* Light grey */
+  border-top: 4px solid #007bff; /* Blue */
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 10px auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Button groups */
+.button-group {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.download-group {
+  margin-top: 20px;
+}
+
+
+================================================
+File: v2.2/App.js
+================================================
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import Select from "react-select";
+import "./App.css";
+
+const codigoSelectStyles = {
+  control: (provided) => ({
+    ...provided,
+    backgroundColor: "white"
+  }),
+  menu: (provided) => ({
+    ...provided,
+    backgroundColor: "white"
+  }),
+  option: (provided, state) => ({
+    ...provided,
+    color: state.isSelected ? "white" : "black",
+    backgroundColor: state.isSelected ? "#007bff" : state.isFocused ? "#f0f0f0" : "white"
+  })
+};
+
+const API_BASE = "";
+const GRID_COLUMNS = [
+  "CÓDIGO DEPENDENCIA (ESPECIALIDAD)",
+  "FECHA ANTENCION",
+  "CEDULA",
+  "NOMBRE DE BENEFICIARIO",
+  "CODIGO",
+  "DESCRIPCIÓN",
+  "OBSERVACIONES",
+  "DIAGNOSTICO PRINCIPAL CIE-10",
+  "CANTIDAD",
+  "DIAGNOSTICO PRESUNTIVO O DIFINITIVO",
+  "OBSERVACIONES"
+];
+
+const blankRow = { name: "", code: "", quantity: 0 };
+
+function App() {
+  const [gridData, setGridData] = useState([]);
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [paciente, setPaciente] = useState(null);
+  const [diagnostico, setDiagnostico] = useState({ nameSelect: null, codeSelect: null });
+  const [procedimientos, setProcedimientos] = useState([{ ...blankRow }]);
+  const [medicamentos, setMedicamentos] = useState([{ ...blankRow }]);
+  const [insumos, setInsumos] = useState([{ ...blankRow }]);
+  const [patientsMaster, setPatientsMaster] = useState([]);
+  const [diagnosticsMaster, setDiagnosticsMaster] = useState([]);
+  const [proceduresMaster, setProceduresMaster] = useState([]);
+  const [medicationsMaster, setMedicationsMaster] = useState([]);
+  const [formKey, setFormKey] = useState(Date.now());
+  const [selectedRows, setSelectedRows] = useState([]);
+
+  useEffect(() => {
+    // Fetch patients
+    axios.get(`${API_BASE}/patients/full/`)
+      .then(res => {
+        setPatientsMaster(res.data.map(p => ({ value: p, label: p })));
+      });
+
+    // Fetch diagnostics
+    axios.get(`${API_BASE}/diagnostics/full/`)
+      .then(res => {
+        setDiagnosticsMaster(res.data.map(item => ({
+          value: item.NOMBRE,
+          label: item.NOMBRE,
+          code: item["CÓDIGO"]
+        })));
+      });
+
+    // Fetch procedures with codes
+    axios.get(`${API_BASE}/procedures/full/`)
+      .then(res => {
+        setProceduresMaster(res.data.map(item => ({
+          value: item.DESCRIPCIÓN,
+          label: `${item.CODIGO ? String(item.CODIGO) : String(item["CÓDIGO"])} - ${item.DESCRIPCIÓN}`,
+          code: item.CODIGO ? String(item.CODIGO) : String(item["CÓDIGO"])
+        })));
+      });
+
+    // Fetch medications with codes
+    axios.get(`${API_BASE}/medications/full/`)
+      .then(res => {
+        setMedicationsMaster(res.data.map(item => ({
+          value: item.DESCRIPCIÓN,
+          label: `${item.CODIGO ? String(item.CODIGO) : String(item["CÓDIGO"])} - ${item.DESCRIPCIÓN}`,
+          code: item.CODIGO ? String(item.CODIGO) : String(item["CÓDIGO"])
+        })));
+      });
+
+    fetchGridData();
+  }, []);
+
+  // Handlers for procedures and medications with forced string conversion
+  const handleProcSelect = (index, selectedOption) => {
+    setProcedimientos(prev => {
+      const newRows = [...prev];
+      newRows[index] = {
+        name: selectedOption?.value || "",
+        code: selectedOption?.code ? String(selectedOption.code) : "",
+        quantity: newRows[index].quantity
+      };
+      if (index === newRows.length - 1 && selectedOption) {
+        newRows.push({ ...blankRow });
+      }
+      return newRows;
+    });
+  };
+
+  const handleMedSelect = (index, selectedOption) => {
+    setMedicamentos(prev => {
+      const newRows = [...prev];
+      newRows[index] = {
+        name: selectedOption?.value || "",
+        code: selectedOption?.code ? String(selectedOption.code) : "",
+        quantity: newRows[index].quantity
+      };
+      if (index === newRows.length - 1 && selectedOption) {
+        newRows.push({ ...blankRow });
+      }
+      return newRows;
+    });
+  };
+
+  const handleQuantityChange = (setter, index, value) => {
+    setter(prev => {
+      const newRows = [...prev];
+      newRows[index].quantity = Number(value) || 0;
+      return newRows;
+    });
+  };
+
+  const handleFileUpload = async (e) => {
+    const selectedFile = e.target.files[0];
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_BASE}/upload/`, formData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      setStatus(res.data.message);
+      fetchGridData();
+    } catch (error) {
+      console.error(error);
+      setStatus("Error uploading file");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchGridData = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/data/`);
+      setGridData(res.data);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleInsumoChange = (index, field, value) => {
+    setInsumos(prev => {
+      const newRows = [...prev];
+      newRows[index] = {
+        ...newRows[index],
+        [field]: value
+      };
+      if (index === newRows.length - 1 && value) {
+        newRows.push({ ...blankRow });
+      }
+      return newRows;
+    });
+  };
+
+  const handlePacienteSelect = (selectedOption) => {
+    setPaciente(selectedOption);
+  };
+
+  const handleDiagnosticoNameSelect = (selectedOption) => {
+    setDiagnostico(prev => ({
+      ...prev,
+      nameSelect: selectedOption,
+      codeSelect: selectedOption ? { value: selectedOption.code, label: selectedOption.code } : null
+    }));
+  };
+
+  const handleDiagnosticoCodeSelect = (selectedOption) => {
+    const option = diagnosticsMaster.find(opt => String(opt.code) === String(selectedOption ? selectedOption.value : ""));
+    setDiagnostico(prev => ({
+      ...prev,
+      codeSelect: selectedOption,
+      nameSelect: option ? { value: option.value, label: option.value, code: option.code } : prev.nameSelect
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const payload = {
+      paciente: paciente ? paciente.value : "",
+      diagnostico_name: diagnostico.nameSelect ? diagnostico.nameSelect.value : "",
+      diagnostico_code: diagnostico.codeSelect ? diagnostico.codeSelect.value : "",
+      procedimientos: procedimientos.filter(row => row.name),
+      medicamentos: medicamentos.filter(row => row.name),
+      insumos: insumos.filter(row => row.name)
+    };
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_BASE}/add/`, payload);
+      setStatus(res.data.message);
+      fetchGridData();
+      handleClear();
+    } catch (error) {
+      console.error(error);
+      setStatus("Error adding entry");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteRows = async () => {
+    try {
+      await axios.post(`${API_BASE}/delete/`, { ids: selectedRows });
+      setStatus("Filas eliminadas exitosamente.");
+      setSelectedRows([]);
+      fetchGridData();
+    } catch (error) {
+      console.error(error);
+      setStatus("Error eliminando filas");
+    }
+  };
+
+  const handleRowSelect = (id, checked) => {
+    setSelectedRows(prev => {
+      if (checked) {
+        return [...prev, id];
+      } else {
+        return prev.filter(x => x !== id);
+      }
+    });
+  };
+
+  const handleRowClick = (row) => {
+    setPaciente({ value: row["NOMBRE DE BENEFICIARIO"], label: row["NOMBRE DE BENEFICIARIO"] });
+    if (row["DIAGNOSTICO PRINCIPAL CIE-10"]) {
+      axios.get(`${API_BASE}/sync/diagnostic/?code=${row["DIAGNOSTICO PRINCIPAL CIE-10"]}`)
+        .then((res) => setDiagnostico({
+          nameSelect: { value: res.data.name, label: res.data.name, code: res.data.code },
+          codeSelect: { value: res.data.code, label: res.data.code, code: res.data.code }
+        }))
+        .catch((err) => console.error(err));
+    }
+  };
+
+  const handleClear = () => {
+    setPaciente(null);
+    setDiagnostico({ nameSelect: null, codeSelect: null });
+    setProcedimientos([{ ...blankRow }]);
+    setMedicamentos([{ ...blankRow }]);
+    setInsumos([{ ...blankRow }]);
+    setFormKey(Date.now());
+  };
+
+  return (
+    <div className="app-container">
+      <div className="form-container">
+        <h1>Registro de Servicios</h1>
+        {loading && <div className="spinner"></div>}
+        <div className="upload-section">
+          <label htmlFor="fileUpload">Seleccionar Archivo Main:</label>
+          <input type="file" id="fileUpload" accept=".xlsx,.csv" onChange={handleFileUpload} />
+        </div>
+        <form key={formKey} onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label>Paciente:</label>
+            <Select
+              options={patientsMaster}
+              value={paciente}
+              onChange={handlePacienteSelect}
+              placeholder="Seleccione paciente"
+              isClearable
+            />
+          </div>
+          <div className="form-group diagnostico-group">
+            <label>Diagnóstico:</label>
+            <div className="diagnostico-fields">
+              <Select
+                options={diagnosticsMaster}
+                value={diagnostico.nameSelect}
+                onChange={handleDiagnosticoNameSelect}
+                placeholder="Nombre diagnóstico"
+                isClearable
+              />
+              <Select
+                options={diagnosticsMaster.map(opt => ({
+                  value: opt.code,
+                  label: opt.code,
+                  code: opt.code
+                }))}
+                value={diagnostico.codeSelect}
+                onChange={handleDiagnosticoCodeSelect}
+                placeholder="Código diagnóstico"
+                isClearable
+                styles={codigoSelectStyles}
+              />
+            </div>
+          </div>
+          <fieldset className="fieldset-group">
+            <legend>Procedimientos</legend>
+            {procedimientos.map((item, i) => (
+              <div key={`proc-${i}`} className="row-group">
+                <Select
+                  options={proceduresMaster}
+                  value={proceduresMaster.find(opt => 
+                    opt.value === item.name && opt.code === item.code
+                  )}
+                  onChange={(selected) => handleProcSelect(i, selected)}
+                  placeholder="Seleccionar procedimiento"
+                  isClearable
+                />
+                <input
+                  type="number"
+                  value={item.quantity}
+                  onChange={(e) => handleQuantityChange(setProcedimientos, i, e.target.value)}
+                  placeholder="Cantidad"
+                  min="0"
+                />
+              </div>
+            ))}
+          </fieldset>
+          <fieldset className="fieldset-group">
+            <legend>Medicamentos</legend>
+            {medicamentos.map((item, i) => (
+              <div key={`med-${i}`} className="row-group">
+                <Select
+                  options={medicationsMaster}
+                  value={medicationsMaster.find(opt => 
+                    opt.value === item.name && opt.code === item.code
+                  )}
+                  onChange={(selected) => handleMedSelect(i, selected)}
+                  placeholder="Seleccionar medicamento"
+                  isClearable
+                />
+                <input
+                  type="number"
+                  value={item.quantity}
+                  onChange={(e) => handleQuantityChange(setMedicamentos, i, e.target.value)}
+                  placeholder="Cantidad"
+                  min="0"
+                />
+              </div>
+            ))}
+          </fieldset>
+          <fieldset className="fieldset-group">
+            <legend>Insumos</legend>
+            {insumos.map((item, i) => (
+              <div key={`insumo-${i}`} className="row-group">
+                <input
+                  type="text"
+                  value={item.name}
+                  onChange={(e) => handleInsumoChange(i, "name", e.target.value)}
+                  placeholder="Nombre"
+                />
+                <input
+                  type="number"
+                  value={item.quantity}
+                  onChange={(e) => handleInsumoChange(i, "quantity", parseInt(e.target.value) || 0)}
+                  placeholder="Cantidad"
+                  min="0"
+                />
+              </div>
+            ))}
+          </fieldset>
+          <div className="button-group">
+            <button type="submit" className="btn-submit">Agregar Entrada</button>
+            <button type="button" onClick={handleClear} className="btn-clear">Limpiar Todo</button>
+          </div>
+        </form>
+        <div className="download-group">
+          <button onClick={handleDownload} className="btn-download">Descargar Archivo</button>
+        </div>
+        {status && <p className="status">{status}</p>}
+      </div>
+      <div className="grid-container">
+        <h2>Datos Cargados</h2>
+        {selectedRows.length > 0 && (
+          <button onClick={handleDeleteRows} className="btn-delete">Eliminar Filas</button>
+        )}
+        <table className="grid-table">
+          <thead>
+            <tr>
+              <th>Seleccionar</th>
+              {GRID_COLUMNS.map((col) => (
+                <th key={col}>{col}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {gridData.map((row) => (
+              <tr key={row.id} onClick={() => handleRowClick(row)}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selectedRows.includes(row.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => handleRowSelect(row.id, e.target.checked)}
+                  />
+                </td>
+                {GRID_COLUMNS.map((col) => (
+                  <td key={col}>{row[col]}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export default App;
+
+
+================================================
+File: v2.2/main.py
+================================================
+import os
+import sys
+import json
+import math
+import pandas as pd
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
+from io import BytesIO
+from functools import lru_cache
+from fastapi.staticfiles import StaticFiles
+
+# Initialize FastAPI app
+app = FastAPI()
+
+# ========================
+# 1. Configure CORS First
+# ========================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://f881-67-173-101-35.ngrok-free.app",  # Your ngrok URL
+        "http://localhost:3000"  # For local development
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]
+)
+
+# ========================
+# 2. Define All API Routes
+# ========================
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+# Load Maestro Files
+try:
+    proc_df = pd.read_excel(resource_path("maestro_procedimientos.xlsx"))
+    med_df = pd.read_excel(resource_path("maestro_medicamentos.xlsx"))
+    diag_df = pd.read_excel(resource_path("maestro_diagnosticos.xlsx"))
+except Exception as e:
+    raise HTTPException(status_code=500, detail=f"Error loading maestro files: {e}")
+
+med_df["concat"] = med_df["DESCRIPCIÓN"].astype(str) + " " + med_df["PRESENTACION"].astype(str)
+
+# Global variables and required columns
+DATA_FILE = "data.xlsx"
+REQUIRED_COLUMNS = [
+    'CÓDIGO DEPENDENCIA\n(ESPECIALIDAD)\n',
+    'PLANILLA',
+    'FECHA ANTENCION',
+    'TIPO DE BENEFICIARIO',
+    'CEDULA',
+    'NOMBRE DE BENEFICIARIO',
+    'SEXO-GENERO',
+    'FECHA DE NACIMIENTO BENEFICIARIO',
+    'EDAD BENEFICIARIO',
+    'TIPO DE SERVICIO/ATENCION',
+    'CODIGO',
+    'DESCRIPCIÓN',
+    'OBSERVACIONES',
+    'DIAGNOSTICO PRINCIPAL CIE-10',
+    'DIAGNSITICO SECUNDARIO 1',
+    'DIAGNSITICO SECUNDARIO 2',
+    'CANTIDAD',
+    'VALOR UNITARIO',
+    'DURACION CONSULTA',
+    'PARENTESCO',
+    'IDENTIFICACION AFILIADO',
+    'NOMBRE AFIALIADO',
+    'CODIGO DE DERIVACION',
+    'NUMERO SECUNCIAL DERIVACION',
+    'CONTINGENCIA CUBIERTA',
+    'DIAGNOSTICO PRESUNTIVO O DIFINITIVO',
+    'TIEMPO ANESTESIA',
+    'DIAGNSITICO SECUNDARIO 3',
+    'DIAGNSITICO SECUNDARIO 4',
+    'DIAGNSITICO SECUNDARIO 5',
+    'PORCENTAJE IVA',
+    'VALOR IVA',
+    'VALOR TOTAL',
+    'GASTOS DE GESTIÓN (VALOR\nUNITARIO) / MODIFICADORES NO\nGEOGRÁFICOS (VALOR UNITARIO)',
+    'FECHA DE INGRESO',
+    'FECHA DE EGRESO',
+    'MOTIVO DE EGRESO',
+    'COBERTURA COMPARTIDA\n',
+    'TIPO DE COBERTURA\n',
+    'DISCAPACIDAD CERTIFICADA\n',
+    'TIPO DE PRESTACIÓN\n',
+    'TIPO DE MÉDICO',
+    'FECHA AUTORIZADA PARA INICIO DE ATENCIÓN \n',
+    'OBSERVACIONES\n',
+    'MARCA FINAL (SIEMPRE F)'
+]
+
+if os.path.exists(DATA_FILE):
+    df = pd.read_excel(DATA_FILE)
+    df.columns = df.columns.str.strip()
+    if len(df.columns) != len(REQUIRED_COLUMNS):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Data file missing columns (by index): expected {len(REQUIRED_COLUMNS)} but got {len(df.columns)}"
+        )
+    else:
+        df.columns = REQUIRED_COLUMNS
+else:
+    df = pd.DataFrame(columns=REQUIRED_COLUMNS)
+
+# --------------------------
+# Grid columns (for frontend display)
+# --------------------------
+grid_columns = [
+    'CÓDIGO DEPENDENCIA (ESPECIALIDAD)',  # Removed \n
+    'FECHA ANTENCION',
+    'CEDULA',
+    'NOMBRE DE BENEFICIARIO',
+    'CODIGO',
+    'DESCRIPCIÓN',
+    'OBSERVACIONES',
+    'DIAGNOSTICO PRINCIPAL CIE-10',
+    'CANTIDAD',
+    'DIAGNOSTICO PRESUNTIVO O DIFINITIVO',
+    'OBSERVACIONES'  # Removed trailing \n
+]
+
+# --------------------------
+# PYDANTIC Models
+# --------------------------
+class EntryItem(BaseModel):
+    name: str = ""
+    code: str = ""
+    quantity: int = 0
+
+class NewEntry(BaseModel):
+    paciente: str = ""
+    diagnostico_name: str = ""
+    diagnostico_code: str = ""
+    procedimientos: list[EntryItem] = []
+    medicamentos: list[EntryItem] = []
+    insumos: list[EntryItem] = []
+
+# New model for row deletion
+class DeleteRows(BaseModel):
+    ids: list[int]
+
+# --------------------------
+# API Endpoints
+# --------------------------
+@app.post("/upload/")
+async def upload_file(file: UploadFile = File(...)):
+    global df
+    try:
+        contents = await file.read()
+        file_location = f"./{file.filename}"
+        with open(file_location, "wb") as f:
+            f.write(contents)
+        if file.filename.lower().endswith('.csv'):
+            temp_df = pd.read_csv(BytesIO(contents))
+        else:
+            temp_df = pd.read_excel(BytesIO(contents))
+        temp_df.columns = temp_df.columns.str.strip()
+        if len(temp_df.columns) != len(REQUIRED_COLUMNS):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Expected {len(REQUIRED_COLUMNS)} columns, got {len(temp_df.columns)}"
+            )
+        else:
+            temp_df.columns = REQUIRED_COLUMNS
+        df = temp_df
+        return {"message": "File uploaded and loaded successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/data/")
+def get_data():
+    records = df.to_dict(orient="records")
+    # Attach an "id" field corresponding to the row's index.
+    for idx, record in enumerate(records):
+        record["id"] = idx
+        for key, value in record.items():
+            if isinstance(value, float) and math.isnan(value):
+                record[key] = None
+    return records
+
+@app.get("/sync/diagnostic/")
+def sync_diagnostic(name: str = None, code: str = None):
+    if name:
+        row = diag_df[diag_df["NOMBRE"].str.lower() == name.lower()]
+    elif code:
+        row = diag_df[diag_df["CÓDIGO"].astype(str) == str(code)]
+    else:
+        raise HTTPException(status_code=400, detail="Provide either name or code")
+    if row.empty:
+        raise HTTPException(status_code=404, detail="Diagnostic not found")
+    return {"name": row.iloc[0]["NOMBRE"], "code": row.iloc[0]["CÓDIGO"]}
+
+@app.get("/search/patients/")
+def search_patients(query: str):
+    results = df[df["NOMBRE DE BENEFICIARIO"].str.contains(query, case=False, na=False)]
+    return results["NOMBRE DE BENEFICIARIO"].unique().tolist()
+
+@app.get("/search/diagnostics/")
+def search_diagnostics(query: str):
+    results = diag_df[diag_df["NOMBRE"].str.contains(query, case=False, na=False)]
+    return results["NOMBRE"].tolist()
+
+@app.get("/search/procedures/")
+def search_procedures(query: str):
+    results = proc_df[proc_df["DESCRIPCIÓN"].str.contains(query, case=False, na=False)]
+    return results["DESCRIPCIÓN"].tolist()
+
+@app.get("/search/medications/")
+def search_medications(query: str):
+    results = med_df[med_df["DESCRIPCIÓN"].str.contains(query, case=False, na=False)]
+    return results["DESCRIPCIÓN"].tolist()
+
+@lru_cache(maxsize=1)
+@app.get("/medications/full/")
+def get_medications_full():
+    code_col = "CODIGO" if "CODIGO" in med_df.columns else "CÓDIGO"
+    return med_df[["DESCRIPCIÓN", code_col]].to_dict(orient="records")
+
+@lru_cache(maxsize=1)
+@app.get("/procedures/full/")
+def get_procedures_full():
+    code_col = "CODIGO" if "CODIGO" in proc_df.columns else "CÓDIGO"
+    return proc_df[["DESCRIPCIÓN", code_col]].to_dict(orient="records")
+
+@lru_cache(maxsize=1)
+@app.get("/patients/full/")
+def get_patients_full():
+    return sorted(df["NOMBRE DE BENEFICIARIO"].dropna().unique().tolist())
+
+@lru_cache(maxsize=1)
+@app.get("/diagnostics/full/")
+def get_diagnostics_full():
+    return diag_df[["NOMBRE", "CÓDIGO"]].to_dict(orient="records")
+
+@app.get("/download/")
+def download_file():
+    if not os.path.exists(DATA_FILE):
+        raise HTTPException(status_code=404, detail="Data file not found")
+    return FileResponse(
+        path=DATA_FILE,
+        filename="data.xlsx",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+@app.post("/add/")
+def add_entry(entry: NewEntry):
+    global df
+    base_row = {
+        "NOMBRE DE BENEFICIARIO": entry.paciente,
+        "DIAGNOSTICO PRINCIPAL CIE-10": entry.diagnostico_code,
+        "DIAGNOSTICO PRESUNTIVO O DIFINITIVO": entry.diagnostico_name,
+        "OBSERVACIONES": ""
+    }
+    new_entries = []
+    for item in entry.procedimientos:
+        if item.name:
+            row = base_row.copy()
+            row["DESCRIPCIÓN"] = item.name
+            row["CODIGO"] = item.code
+            row["CANTIDAD"] = item.quantity
+            new_entries.append(row)
+    for item in entry.medicamentos:
+        if item.name:
+            row = base_row.copy()
+            row["DESCRIPCIÓN"] = item.name
+            row["CODIGO"] = item.code
+            row["CANTIDAD"] = item.quantity
+            new_entries.append(row)
+    for item in entry.insumos:
+        if item.name:
+            row = base_row.copy()
+            row["DESCRIPCIÓN"] = item.name
+            row["CODIGO"] = item.code
+            row["CANTIDAD"] = item.quantity
+            new_entries.append(row)
+    # Insert new entries below the last row with matching patient name and inherit base fields.
+    current_rows = df.to_dict(orient="records")
+    for new_row in new_entries:
+        patient = new_row["NOMBRE DE BENEFICIARIO"]
+        insertion_index = None
+        for i in range(len(current_rows) - 1, -1, -1):
+            if current_rows[i]["NOMBRE DE BENEFICIARIO"] == patient:
+                new_row["CÓDIGO DEPENDENCIA\n(ESPECIALIDAD)\n"] = current_rows[i].get("CÓDIGO DEPENDENCIA\n(ESPECIALIDAD)\n", "")
+                new_row["FECHA ANTENCION"] = current_rows[i].get("FECHA ANTENCION", "")
+                new_row["CEDULA"] = current_rows[i].get("CEDULA", "")
+                insertion_index = i + 1
+                break
+        if insertion_index is None:
+            current_rows.append(new_row)
+        else:
+            current_rows.insert(insertion_index, new_row)
+    df = pd.DataFrame(current_rows)
+    df.to_excel(DATA_FILE, index=False, columns=df.columns.tolist())
+
+    try:
+        wb = load_workbook(DATA_FILE)
+        ws = wb.active
+        header = [cell.value for cell in ws[1]]
+        patient_idx = header.index("NOMBRE DE BENEFICIARIO") + 1
+        date_idx = header.index("FECHA ANTENCION") + 1
+        fill1 = PatternFill(start_color="FF92D050", end_color="FF92D050", fill_type="solid")
+        fill2 = PatternFill(start_color="FF00B0F0", end_color="FF00B0F0", fill_type="solid")
+        current_fill = fill1
+        prev_key = None
+        for r in range(2, ws.max_row + 1):
+            patient_val = ws.cell(row=r, column=patient_idx).value
+            date_val = ws.cell(row=r, column=date_idx).value
+            key = (patient_val, date_val)
+            if key != prev_key:
+                current_fill = fill2 if current_fill == fill1 else fill1
+                prev_key = key
+            for c in range(1, ws.max_column + 1):
+                ws.cell(row=r, column=c).fill = current_fill
+        wb.save(DATA_FILE)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving colored file: {e}")
+    return {"message": "Entry added successfully!"}
+
+@app.post("/delete/")
+def delete_rows(delete_request: DeleteRows):
+    global df
+    records = df.to_dict(orient="records")
+    # Filter out rows whose index (position) is in the provided list.
+    new_records = [record for idx, record in enumerate(records) if idx not in delete_request.ids]
+    df = pd.DataFrame(new_records)
+    df.to_excel(DATA_FILE, index=False, columns=df.columns.tolist())
+    return {"message": "Filas eliminadas exitosamente."}
+
+@app.post("/save/")
+def save_file():
+    df.to_excel(DATA_FILE, index=False, columns=df.columns.tolist())
+    return {"message": "File saved successfully."}
+
+@app.on_event("shutdown")
+def save_state():
+    state = {"data_file": DATA_FILE}
+    with open("state.json", "w") as f:
+        json.dump(state, f)
+
+# ========================
+# 3. Mount React Frontend LAST
+# ========================
+build_path = os.path.join(os.path.dirname(__file__), "frontend", "build")
+
+if os.path.exists(build_path):
+    app.mount("/", StaticFiles(directory=build_path, html=True), name="static")
+else:
+    print("Warning: React build directory not found. Frontend will not be served.")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+================================================
+File: v2.2/package.json
+================================================
+{
+  "dependencies": {
+    "axios": "^1.7.9",
+    "react-select": "^5.10.0"
+  }
+}
+
+
+================================================
+File: v2.2/state.json
+================================================
+{"data_file": "data.xlsx"}
+
+================================================
+File: v2.2/yarn.lock
+================================================
+# THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY.
+# yarn lockfile v1
+
+
+"@babel/code-frame@^7.0.0", "@babel/code-frame@^7.26.2":
+  version "7.26.2"
+  resolved "https://registry.yarnpkg.com/@babel/code-frame/-/code-frame-7.26.2.tgz#4b5fab97d33338eff916235055f0ebc21e573a85"
+  integrity sha512-RJlIHRueQgwWitWgF8OdFYGZX328Ax5BCemNGlqHfplnRT9ESi8JkFlvaVYbS+UubVY6dpv87Fs2u5M29iNFVQ==
+  dependencies:
+    "@babel/helper-validator-identifier" "^7.25.9"
+    js-tokens "^4.0.0"
+    picocolors "^1.0.0"
+
+"@babel/generator@^7.26.8":
+  version "7.26.8"
+  resolved "https://registry.yarnpkg.com/@babel/generator/-/generator-7.26.8.tgz#f9c5e770309e12e3099ad8271e52f6caa15442ab"
+  integrity sha512-ef383X5++iZHWAXX0SXQR6ZyQhw/0KtTkrTz61WXRhFM6dhpHulO/RJz79L8S6ugZHJkOOkUrUdxgdF2YiPFnA==
+  dependencies:
+    "@babel/parser" "^7.26.8"
+    "@babel/types" "^7.26.8"
+    "@jridgewell/gen-mapping" "^0.3.5"
+    "@jridgewell/trace-mapping" "^0.3.25"
+    jsesc "^3.0.2"
+
+"@babel/helper-module-imports@^7.16.7":
+  version "7.25.9"
+  resolved "https://registry.yarnpkg.com/@babel/helper-module-imports/-/helper-module-imports-7.25.9.tgz#e7f8d20602ebdbf9ebbea0a0751fb0f2a4141715"
+  integrity sha512-tnUA4RsrmflIM6W6RFTLFSXITtl0wKjgpnLgXyowocVPrbYrLUXSBXDgTs8BlbmIzIdlBySRQjINYs2BAkiLtw==
+  dependencies:
+    "@babel/traverse" "^7.25.9"
+    "@babel/types" "^7.25.9"
+
+"@babel/helper-string-parser@^7.25.9":
+  version "7.25.9"
+  resolved "https://registry.yarnpkg.com/@babel/helper-string-parser/-/helper-string-parser-7.25.9.tgz#1aabb72ee72ed35789b4bbcad3ca2862ce614e8c"
+  integrity sha512-4A/SCr/2KLd5jrtOMFzaKjVtAei3+2r/NChoBNoZ3EyP/+GlhoaEGoWOZUmFmoITP7zOJyHIMm+DYRd8o3PvHA==
+
+"@babel/helper-validator-identifier@^7.25.9":
+  version "7.25.9"
+  resolved "https://registry.yarnpkg.com/@babel/helper-validator-identifier/-/helper-validator-identifier-7.25.9.tgz#24b64e2c3ec7cd3b3c547729b8d16871f22cbdc7"
+  integrity sha512-Ed61U6XJc3CVRfkERJWDz4dJwKe7iLmmJsbOGu9wSloNSFttHV0I8g6UAgb7qnK5ly5bGLPd4oXZlxCdANBOWQ==
+
+"@babel/parser@^7.26.8":
+  version "7.26.8"
+  resolved "https://registry.yarnpkg.com/@babel/parser/-/parser-7.26.8.tgz#deca2b4d99e5e1b1553843b99823f118da6107c2"
+  integrity sha512-TZIQ25pkSoaKEYYaHbbxkfL36GNsQ6iFiBbeuzAkLnXayKR1yP1zFe+NxuZWWsUyvt8icPU9CCq0sgWGXR1GEw==
+  dependencies:
+    "@babel/types" "^7.26.8"
+
+"@babel/runtime@^7.12.0", "@babel/runtime@^7.12.5", "@babel/runtime@^7.18.3", "@babel/runtime@^7.5.5", "@babel/runtime@^7.8.7":
+  version "7.26.7"
+  resolved "https://registry.yarnpkg.com/@babel/runtime/-/runtime-7.26.7.tgz#f4e7fe527cd710f8dc0618610b61b4b060c3c341"
+  integrity sha512-AOPI3D+a8dXnja+iwsUqGRjr1BbZIe771sXdapOtYI531gSqpi92vXivKcq2asu/DFpdl1ceFAKZyRzK2PCVcQ==
+  dependencies:
+    regenerator-runtime "^0.14.0"
+
+"@babel/template@^7.26.8":
+  version "7.26.8"
+  resolved "https://registry.yarnpkg.com/@babel/template/-/template-7.26.8.tgz#db3898f47a17bab2f4c78ec1d0de38527c2ffe19"
+  integrity sha512-iNKaX3ZebKIsCvJ+0jd6embf+Aulaa3vNBqZ41kM7iTWjx5qzWKXGHiJUW3+nTpQ18SG11hdF8OAzKrpXkb96Q==
+  dependencies:
+    "@babel/code-frame" "^7.26.2"
+    "@babel/parser" "^7.26.8"
+    "@babel/types" "^7.26.8"
+
+"@babel/traverse@^7.25.9":
+  version "7.26.8"
+  resolved "https://registry.yarnpkg.com/@babel/traverse/-/traverse-7.26.8.tgz#0a8a9c2b7cc9519eed14275f4fd2278ad46e8cc9"
+  integrity sha512-nic9tRkjYH0oB2dzr/JoGIm+4Q6SuYeLEiIiZDwBscRMYFJ+tMAz98fuel9ZnbXViA2I0HVSSRRK8DW5fjXStA==
+  dependencies:
+    "@babel/code-frame" "^7.26.2"
+    "@babel/generator" "^7.26.8"
+    "@babel/parser" "^7.26.8"
+    "@babel/template" "^7.26.8"
+    "@babel/types" "^7.26.8"
+    debug "^4.3.1"
+    globals "^11.1.0"
+
+"@babel/types@^7.25.9", "@babel/types@^7.26.8":
+  version "7.26.8"
+  resolved "https://registry.yarnpkg.com/@babel/types/-/types-7.26.8.tgz#97dcdc190fab45be7f3dc073e3c11160d677c127"
+  integrity sha512-eUuWapzEGWFEpHFxgEaBG8e3n6S8L3MSu0oda755rOfabWPnh0Our1AozNFVUxGFIhbKgd1ksprsoDGMinTOTA==
+  dependencies:
+    "@babel/helper-string-parser" "^7.25.9"
+    "@babel/helper-validator-identifier" "^7.25.9"
+
+"@emotion/babel-plugin@^11.13.5":
+  version "11.13.5"
+  resolved "https://registry.yarnpkg.com/@emotion/babel-plugin/-/babel-plugin-11.13.5.tgz#eab8d65dbded74e0ecfd28dc218e75607c4e7bc0"
+  integrity sha512-pxHCpT2ex+0q+HH91/zsdHkw/lXd468DIN2zvfvLtPKLLMo6gQj7oLObq8PhkrxOZb/gGCq03S3Z7PDhS8pduQ==
+  dependencies:
+    "@babel/helper-module-imports" "^7.16.7"
+    "@babel/runtime" "^7.18.3"
+    "@emotion/hash" "^0.9.2"
+    "@emotion/memoize" "^0.9.0"
+    "@emotion/serialize" "^1.3.3"
+    babel-plugin-macros "^3.1.0"
+    convert-source-map "^1.5.0"
+    escape-string-regexp "^4.0.0"
+    find-root "^1.1.0"
+    source-map "^0.5.7"
+    stylis "4.2.0"
+
+"@emotion/cache@^11.14.0", "@emotion/cache@^11.4.0":
+  version "11.14.0"
+  resolved "https://registry.yarnpkg.com/@emotion/cache/-/cache-11.14.0.tgz#ee44b26986eeb93c8be82bb92f1f7a9b21b2ed76"
+  integrity sha512-L/B1lc/TViYk4DcpGxtAVbx0ZyiKM5ktoIyafGkH6zg/tj+mA+NE//aPYKG0k8kCHSHVJrpLpcAlOBEXQ3SavA==
+  dependencies:
+    "@emotion/memoize" "^0.9.0"
+    "@emotion/sheet" "^1.4.0"
+    "@emotion/utils" "^1.4.2"
+    "@emotion/weak-memoize" "^0.4.0"
+    stylis "4.2.0"
+
+"@emotion/hash@^0.9.2":
+  version "0.9.2"
+  resolved "https://registry.yarnpkg.com/@emotion/hash/-/hash-0.9.2.tgz#ff9221b9f58b4dfe61e619a7788734bd63f6898b"
+  integrity sha512-MyqliTZGuOm3+5ZRSaaBGP3USLw6+EGykkwZns2EPC5g8jJ4z9OrdZY9apkl3+UP9+sdz76YYkwCKP5gh8iY3g==
+
+"@emotion/memoize@^0.9.0":
+  version "0.9.0"
+  resolved "https://registry.yarnpkg.com/@emotion/memoize/-/memoize-0.9.0.tgz#745969d649977776b43fc7648c556aaa462b4102"
+  integrity sha512-30FAj7/EoJ5mwVPOWhAyCX+FPfMDrVecJAM+Iw9NRoSl4BBAQeqj4cApHHUXOVvIPgLVDsCFoz/hGD+5QQD1GQ==
+
+"@emotion/react@^11.8.1":
+  version "11.14.0"
+  resolved "https://registry.yarnpkg.com/@emotion/react/-/react-11.14.0.tgz#cfaae35ebc67dd9ef4ea2e9acc6cd29e157dd05d"
+  integrity sha512-O000MLDBDdk/EohJPFUqvnp4qnHeYkVP5B0xEG0D/L7cOKP9kefu2DXn8dj74cQfsEzUqh+sr1RzFqiL1o+PpA==
+  dependencies:
+    "@babel/runtime" "^7.18.3"
+    "@emotion/babel-plugin" "^11.13.5"
+    "@emotion/cache" "^11.14.0"
+    "@emotion/serialize" "^1.3.3"
+    "@emotion/use-insertion-effect-with-fallbacks" "^1.2.0"
+    "@emotion/utils" "^1.4.2"
+    "@emotion/weak-memoize" "^0.4.0"
+    hoist-non-react-statics "^3.3.1"
+
+"@emotion/serialize@^1.3.3":
+  version "1.3.3"
+  resolved "https://registry.yarnpkg.com/@emotion/serialize/-/serialize-1.3.3.tgz#d291531005f17d704d0463a032fe679f376509e8"
+  integrity sha512-EISGqt7sSNWHGI76hC7x1CksiXPahbxEOrC5RjmFRJTqLyEK9/9hZvBbiYn70dw4wuwMKiEMCUlR6ZXTSWQqxA==
+  dependencies:
+    "@emotion/hash" "^0.9.2"
+    "@emotion/memoize" "^0.9.0"
+    "@emotion/unitless" "^0.10.0"
+    "@emotion/utils" "^1.4.2"
+    csstype "^3.0.2"
+
+"@emotion/sheet@^1.4.0":
+  version "1.4.0"
+  resolved "https://registry.yarnpkg.com/@emotion/sheet/-/sheet-1.4.0.tgz#c9299c34d248bc26e82563735f78953d2efca83c"
+  integrity sha512-fTBW9/8r2w3dXWYM4HCB1Rdp8NLibOw2+XELH5m5+AkWiL/KqYX6dc0kKYlaYyKjrQ6ds33MCdMPEwgs2z1rqg==
+
+"@emotion/unitless@^0.10.0":
+  version "0.10.0"
+  resolved "https://registry.yarnpkg.com/@emotion/unitless/-/unitless-0.10.0.tgz#2af2f7c7e5150f497bdabd848ce7b218a27cf745"
+  integrity sha512-dFoMUuQA20zvtVTuxZww6OHoJYgrzfKM1t52mVySDJnMSEa08ruEvdYQbhvyu6soU+NeLVd3yKfTfT0NeV6qGg==
+
+"@emotion/use-insertion-effect-with-fallbacks@^1.2.0":
+  version "1.2.0"
+  resolved "https://registry.yarnpkg.com/@emotion/use-insertion-effect-with-fallbacks/-/use-insertion-effect-with-fallbacks-1.2.0.tgz#8a8cb77b590e09affb960f4ff1e9a89e532738bf"
+  integrity sha512-yJMtVdH59sxi/aVJBpk9FQq+OR8ll5GT8oWd57UpeaKEVGab41JWaCFA7FRLoMLloOZF/c/wsPoe+bfGmRKgDg==
+
+"@emotion/utils@^1.4.2":
+  version "1.4.2"
+  resolved "https://registry.yarnpkg.com/@emotion/utils/-/utils-1.4.2.tgz#6df6c45881fcb1c412d6688a311a98b7f59c1b52"
+  integrity sha512-3vLclRofFziIa3J2wDh9jjbkUz9qk5Vi3IZ/FSTKViB0k+ef0fPV7dYrUIugbgupYDx7v9ud/SjrtEP8Y4xLoA==
+
+"@emotion/weak-memoize@^0.4.0":
+  version "0.4.0"
+  resolved "https://registry.yarnpkg.com/@emotion/weak-memoize/-/weak-memoize-0.4.0.tgz#5e13fac887f08c44f76b0ccaf3370eb00fec9bb6"
+  integrity sha512-snKqtPW01tN0ui7yu9rGv69aJXr/a/Ywvl11sUjNtEcRc+ng/mQriFL0wLXMef74iHa/EkftbDzU9F8iFbH+zg==
+
+"@floating-ui/core@^1.6.0":
+  version "1.6.9"
+  resolved "https://registry.yarnpkg.com/@floating-ui/core/-/core-1.6.9.tgz#64d1da251433019dafa091de9b2886ff35ec14e6"
+  integrity sha512-uMXCuQ3BItDUbAMhIXw7UPXRfAlOAvZzdK9BWpE60MCn+Svt3aLn9jsPTi/WNGlRUu2uI0v5S7JiIUsbsvh3fw==
+  dependencies:
+    "@floating-ui/utils" "^0.2.9"
+
+"@floating-ui/dom@^1.0.1":
+  version "1.6.13"
+  resolved "https://registry.yarnpkg.com/@floating-ui/dom/-/dom-1.6.13.tgz#a8a938532aea27a95121ec16e667a7cbe8c59e34"
+  integrity sha512-umqzocjDgNRGTuO7Q8CU32dkHkECqI8ZdMZ5Swb6QAM0t5rnlrN3lGo1hdpscRd3WS8T6DKYK4ephgIH9iRh3w==
+  dependencies:
+    "@floating-ui/core" "^1.6.0"
+    "@floating-ui/utils" "^0.2.9"
+
+"@floating-ui/utils@^0.2.9":
+  version "0.2.9"
+  resolved "https://registry.yarnpkg.com/@floating-ui/utils/-/utils-0.2.9.tgz#50dea3616bc8191fb8e112283b49eaff03e78429"
+  integrity sha512-MDWhGtE+eHw5JW7lq4qhc5yRLS11ERl1c7Z6Xd0a58DozHES6EnNNwUWbMiG4J9Cgj053Bhk8zvlhFYKVhULwg==
+
+"@jridgewell/gen-mapping@^0.3.5":
+  version "0.3.8"
+  resolved "https://registry.yarnpkg.com/@jridgewell/gen-mapping/-/gen-mapping-0.3.8.tgz#4f0e06362e01362f823d348f1872b08f666d8142"
+  integrity sha512-imAbBGkb+ebQyxKgzv5Hu2nmROxoDOXHh80evxdoXNOrvAnVx7zimzc1Oo5h9RlfV4vPXaE2iM5pOFbvOCClWA==
+  dependencies:
+    "@jridgewell/set-array" "^1.2.1"
+    "@jridgewell/sourcemap-codec" "^1.4.10"
+    "@jridgewell/trace-mapping" "^0.3.24"
+
+"@jridgewell/resolve-uri@^3.1.0":
+  version "3.1.2"
+  resolved "https://registry.yarnpkg.com/@jridgewell/resolve-uri/-/resolve-uri-3.1.2.tgz#7a0ee601f60f99a20c7c7c5ff0c80388c1189bd6"
+  integrity sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==
+
+"@jridgewell/set-array@^1.2.1":
+  version "1.2.1"
+  resolved "https://registry.yarnpkg.com/@jridgewell/set-array/-/set-array-1.2.1.tgz#558fb6472ed16a4c850b889530e6b36438c49280"
+  integrity sha512-R8gLRTZeyp03ymzP/6Lil/28tGeGEzhx1q2k703KGWRAI1VdvPIXdG70VJc2pAMw3NA6JKL5hhFu1sJX0Mnn/A==
+
+"@jridgewell/sourcemap-codec@^1.4.10", "@jridgewell/sourcemap-codec@^1.4.14":
+  version "1.5.0"
+  resolved "https://registry.yarnpkg.com/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.5.0.tgz#3188bcb273a414b0d215fd22a58540b989b9409a"
+  integrity sha512-gv3ZRaISU3fjPAgNsriBRqGWQL6quFx04YMPW/zD8XMLsU32mhCCbfbO6KZFLjvYpCZ8zyDEgqsgf+PwPaM7GQ==
+
+"@jridgewell/trace-mapping@^0.3.24", "@jridgewell/trace-mapping@^0.3.25":
+  version "0.3.25"
+  resolved "https://registry.yarnpkg.com/@jridgewell/trace-mapping/-/trace-mapping-0.3.25.tgz#15f190e98895f3fc23276ee14bc76b675c2e50f0"
+  integrity sha512-vNk6aEwybGtawWmy/PzwnGDOjCkLWSD2wqvjGGAgOAwCGWySYXfYoxt00IJkTF+8Lb57DwOb3Aa0o9CApepiYQ==
+  dependencies:
+    "@jridgewell/resolve-uri" "^3.1.0"
+    "@jridgewell/sourcemap-codec" "^1.4.14"
+
+"@types/parse-json@^4.0.0":
+  version "4.0.2"
+  resolved "https://registry.yarnpkg.com/@types/parse-json/-/parse-json-4.0.2.tgz#5950e50960793055845e956c427fc2b0d70c5239"
+  integrity sha512-dISoDXWWQwUquiKsyZ4Ng+HX2KsPL7LyHKHQwgGFEA3IaKac4Obd+h2a/a6waisAoepJlBcx9paWqjA8/HVjCw==
+
+"@types/react-transition-group@^4.4.0":
+  version "4.4.12"
+  resolved "https://registry.yarnpkg.com/@types/react-transition-group/-/react-transition-group-4.4.12.tgz#b5d76568485b02a307238270bfe96cb51ee2a044"
+  integrity sha512-8TV6R3h2j7a91c+1DXdJi3Syo69zzIZbz7Lg5tORM5LEJG7X/E6a1V3drRyBRZq7/utz7A+c4OgYLiLcYGHG6w==
+
+asynckit@^0.4.0:
+  version "0.4.0"
+  resolved "https://registry.yarnpkg.com/asynckit/-/asynckit-0.4.0.tgz#c79ed97f7f34cb8f2ba1bc9790bcc366474b4b79"
+  integrity sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==
+
+axios@^1.7.9:
+  version "1.7.9"
+  resolved "https://registry.yarnpkg.com/axios/-/axios-1.7.9.tgz#d7d071380c132a24accda1b2cfc1535b79ec650a"
+  integrity sha512-LhLcE7Hbiryz8oMDdDptSrWowmB4Bl6RCt6sIJKpRB4XtVf0iEgewX3au/pJqm+Py1kCASkb/FFKjxQaLtxJvw==
+  dependencies:
+    follow-redirects "^1.15.6"
+    form-data "^4.0.0"
+    proxy-from-env "^1.1.0"
+
+babel-plugin-macros@^3.1.0:
+  version "3.1.0"
+  resolved "https://registry.yarnpkg.com/babel-plugin-macros/-/babel-plugin-macros-3.1.0.tgz#9ef6dc74deb934b4db344dc973ee851d148c50c1"
+  integrity sha512-Cg7TFGpIr01vOQNODXOOaGz2NpCU5gl8x1qJFbb6hbZxR7XrcE2vtbAsTAbJ7/xwJtUuJEw8K8Zr/AE0LHlesg==
+  dependencies:
+    "@babel/runtime" "^7.12.5"
+    cosmiconfig "^7.0.0"
+    resolve "^1.19.0"
+
+callsites@^3.0.0:
+  version "3.1.0"
+  resolved "https://registry.yarnpkg.com/callsites/-/callsites-3.1.0.tgz#b3630abd8943432f54b3f0519238e33cd7df2f73"
+  integrity sha512-P8BjAsXvZS+VIDUI11hHCQEv74YT67YUi5JJFNWIqL235sBmjX4+qx9Muvls5ivyNENctx46xQLQ3aTuE7ssaQ==
+
+combined-stream@^1.0.8:
+  version "1.0.8"
+  resolved "https://registry.yarnpkg.com/combined-stream/-/combined-stream-1.0.8.tgz#c3d45a8b34fd730631a110a8a2520682b31d5a7f"
+  integrity sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==
+  dependencies:
+    delayed-stream "~1.0.0"
+
+convert-source-map@^1.5.0:
+  version "1.9.0"
+  resolved "https://registry.yarnpkg.com/convert-source-map/-/convert-source-map-1.9.0.tgz#7faae62353fb4213366d0ca98358d22e8368b05f"
+  integrity sha512-ASFBup0Mz1uyiIjANan1jzLQami9z1PoYSZCiiYW2FczPbenXc45FZdBZLzOT+r6+iciuEModtmCti+hjaAk0A==
+
+cosmiconfig@^7.0.0:
+  version "7.1.0"
+  resolved "https://registry.yarnpkg.com/cosmiconfig/-/cosmiconfig-7.1.0.tgz#1443b9afa596b670082ea46cbd8f6a62b84635f6"
+  integrity sha512-AdmX6xUzdNASswsFtmwSt7Vj8po9IuqXm0UXz7QKPuEUmPB4XyjGfaAr2PSuELMwkRMVH1EpIkX5bTZGRB3eCA==
+  dependencies:
+    "@types/parse-json" "^4.0.0"
+    import-fresh "^3.2.1"
+    parse-json "^5.0.0"
+    path-type "^4.0.0"
+    yaml "^1.10.0"
+
+csstype@^3.0.2:
+  version "3.1.3"
+  resolved "https://registry.yarnpkg.com/csstype/-/csstype-3.1.3.tgz#d80ff294d114fb0e6ac500fbf85b60137d7eff81"
+  integrity sha512-M1uQkMl8rQK/szD0LNhtqxIPLpimGm8sOBwU7lLnCpSbTyY3yeU1Vc7l4KT5zT4s/yOxHH5O7tIuuLOCnLADRw==
+
+debug@^4.3.1:
+  version "4.4.0"
+  resolved "https://registry.yarnpkg.com/debug/-/debug-4.4.0.tgz#2b3f2aea2ffeb776477460267377dc8710faba8a"
+  integrity sha512-6WTZ/IxCY/T6BALoZHaE4ctp9xm+Z5kY/pzYaCHRFeyVhojxlrm+46y68HA6hr0TcwEssoxNiDEUJQjfPZ/RYA==
+  dependencies:
+    ms "^2.1.3"
+
+delayed-stream@~1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/delayed-stream/-/delayed-stream-1.0.0.tgz#df3ae199acadfb7d440aaae0b29e2272b24ec619"
+  integrity sha512-ZySD7Nf91aLB0RxL4KGrKHBXl7Eds1DAmEdcoVawXnLD7SDhpNgtuII2aAkg7a7QS41jxPSZ17p4VdGnMHk3MQ==
+
+dom-helpers@^5.0.1:
+  version "5.2.1"
+  resolved "https://registry.yarnpkg.com/dom-helpers/-/dom-helpers-5.2.1.tgz#d9400536b2bf8225ad98fe052e029451ac40e902"
+  integrity sha512-nRCa7CK3VTrM2NmGkIy4cbK7IZlgBE/PYMn55rrXefr5xXDP0LdtfPnblFDoVdcAfslJ7or6iqAUnx0CCGIWQA==
+  dependencies:
+    "@babel/runtime" "^7.8.7"
+    csstype "^3.0.2"
+
+error-ex@^1.3.1:
+  version "1.3.2"
+  resolved "https://registry.yarnpkg.com/error-ex/-/error-ex-1.3.2.tgz#b4ac40648107fdcdcfae242f428bea8a14d4f1bf"
+  integrity sha512-7dFHNmqeFSEt2ZBsCriorKnn3Z2pj+fd9kmI6QoWw4//DL+icEBfc0U7qJCisqrTsKTjw4fNFy2pW9OqStD84g==
+  dependencies:
+    is-arrayish "^0.2.1"
+
+escape-string-regexp@^4.0.0:
+  version "4.0.0"
+  resolved "https://registry.yarnpkg.com/escape-string-regexp/-/escape-string-regexp-4.0.0.tgz#14ba83a5d373e3d311e5afca29cf5bfad965bf34"
+  integrity sha512-TtpcNJ3XAzx3Gq8sWRzJaVajRs0uVxA2YAkdb1jm2YkPz4G6egUFAyA3n5vtEIZefPk5Wa4UXbKuS5fKkJWdgA==
+
+find-root@^1.1.0:
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/find-root/-/find-root-1.1.0.tgz#abcfc8ba76f708c42a97b3d685b7e9450bfb9ce4"
+  integrity sha512-NKfW6bec6GfKc0SGx1e07QZY9PE99u0Bft/0rzSD5k3sO/vwkVUpDUKVm5Gpp5Ue3YfShPFTX2070tDs5kB9Ng==
+
+follow-redirects@^1.15.6:
+  version "1.15.9"
+  resolved "https://registry.yarnpkg.com/follow-redirects/-/follow-redirects-1.15.9.tgz#a604fa10e443bf98ca94228d9eebcc2e8a2c8ee1"
+  integrity sha512-gew4GsXizNgdoRyqmyfMHyAmXsZDk6mHkSxZFCzW9gwlbtOW44CDtYavM+y+72qD/Vq2l550kMF52DT8fOLJqQ==
+
+form-data@^4.0.0:
+  version "4.0.1"
+  resolved "https://registry.yarnpkg.com/form-data/-/form-data-4.0.1.tgz#ba1076daaaa5bfd7e99c1a6cb02aa0a5cff90d48"
+  integrity sha512-tzN8e4TX8+kkxGPK8D5u0FNmjPUjw3lwC9lSLxxoB/+GtsJG91CO8bSWy73APlgAZzZbXEYZJuxjkHH2w+Ezhw==
+  dependencies:
+    asynckit "^0.4.0"
+    combined-stream "^1.0.8"
+    mime-types "^2.1.12"
+
+function-bind@^1.1.2:
+  version "1.1.2"
+  resolved "https://registry.yarnpkg.com/function-bind/-/function-bind-1.1.2.tgz#2c02d864d97f3ea6c8830c464cbd11ab6eab7a1c"
+  integrity sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==
+
+globals@^11.1.0:
+  version "11.12.0"
+  resolved "https://registry.yarnpkg.com/globals/-/globals-11.12.0.tgz#ab8795338868a0babd8525758018c2a7eb95c42e"
+  integrity sha512-WOBp/EEGUiIsJSp7wcv/y6MO+lV9UoncWqxuFfm8eBwzWNgyfBd6Gz+IeKQ9jCmyhoH99g15M3T+QaVHFjizVA==
+
+hasown@^2.0.2:
+  version "2.0.2"
+  resolved "https://registry.yarnpkg.com/hasown/-/hasown-2.0.2.tgz#003eaf91be7adc372e84ec59dc37252cedb80003"
+  integrity sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==
+  dependencies:
+    function-bind "^1.1.2"
+
+hoist-non-react-statics@^3.3.1:
+  version "3.3.2"
+  resolved "https://registry.yarnpkg.com/hoist-non-react-statics/-/hoist-non-react-statics-3.3.2.tgz#ece0acaf71d62c2969c2ec59feff42a4b1a85b45"
+  integrity sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==
+  dependencies:
+    react-is "^16.7.0"
+
+import-fresh@^3.2.1:
+  version "3.3.1"
+  resolved "https://registry.yarnpkg.com/import-fresh/-/import-fresh-3.3.1.tgz#9cecb56503c0ada1f2741dbbd6546e4b13b57ccf"
+  integrity sha512-TR3KfrTZTYLPB6jUjfx6MF9WcWrHL9su5TObK4ZkYgBdWKPOFoSoQIdEuTuR82pmtxH2spWG9h6etwfr1pLBqQ==
+  dependencies:
+    parent-module "^1.0.0"
+    resolve-from "^4.0.0"
+
+is-arrayish@^0.2.1:
+  version "0.2.1"
+  resolved "https://registry.yarnpkg.com/is-arrayish/-/is-arrayish-0.2.1.tgz#77c99840527aa8ecb1a8ba697b80645a7a926a9d"
+  integrity sha512-zz06S8t0ozoDXMG+ube26zeCTNXcKIPJZJi8hBrF4idCLms4CG9QtK7qBl1boi5ODzFpjswb5JPmHCbMpjaYzg==
+
+is-core-module@^2.16.0:
+  version "2.16.1"
+  resolved "https://registry.yarnpkg.com/is-core-module/-/is-core-module-2.16.1.tgz#2a98801a849f43e2add644fbb6bc6229b19a4ef4"
+  integrity sha512-UfoeMA6fIJ8wTYFEUjelnaGI67v6+N7qXJEvQuIGa99l4xsCruSYOVSQ0uPANn4dAzm8lkYPaKLrrijLq7x23w==
+  dependencies:
+    hasown "^2.0.2"
+
+"js-tokens@^3.0.0 || ^4.0.0", js-tokens@^4.0.0:
+  version "4.0.0"
+  resolved "https://registry.yarnpkg.com/js-tokens/-/js-tokens-4.0.0.tgz#19203fb59991df98e3a287050d4647cdeaf32499"
+  integrity sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==
+
+jsesc@^3.0.2:
+  version "3.1.0"
+  resolved "https://registry.yarnpkg.com/jsesc/-/jsesc-3.1.0.tgz#74d335a234f67ed19907fdadfac7ccf9d409825d"
+  integrity sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA==
+
+json-parse-even-better-errors@^2.3.0:
+  version "2.3.1"
+  resolved "https://registry.yarnpkg.com/json-parse-even-better-errors/-/json-parse-even-better-errors-2.3.1.tgz#7c47805a94319928e05777405dc12e1f7a4ee02d"
+  integrity sha512-xyFwyhro/JEof6Ghe2iz2NcXoj2sloNsWr/XsERDK/oiPCfaNhl5ONfp+jQdAZRQQ0IJWNzH9zIZF7li91kh2w==
+
+lines-and-columns@^1.1.6:
+  version "1.2.4"
+  resolved "https://registry.yarnpkg.com/lines-and-columns/-/lines-and-columns-1.2.4.tgz#eca284f75d2965079309dc0ad9255abb2ebc1632"
+  integrity sha512-7ylylesZQ/PV29jhEDl3Ufjo6ZX7gCqJr5F7PKrqc93v7fzSymt1BpwEU8nAUXs8qzzvqhbjhK5QZg6Mt/HkBg==
+
+loose-envify@^1.4.0:
+  version "1.4.0"
+  resolved "https://registry.yarnpkg.com/loose-envify/-/loose-envify-1.4.0.tgz#71ee51fa7be4caec1a63839f7e682d8132d30caf"
+  integrity sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==
+  dependencies:
+    js-tokens "^3.0.0 || ^4.0.0"
+
+memoize-one@^6.0.0:
+  version "6.0.0"
+  resolved "https://registry.yarnpkg.com/memoize-one/-/memoize-one-6.0.0.tgz#b2591b871ed82948aee4727dc6abceeeac8c1045"
+  integrity sha512-rkpe71W0N0c0Xz6QD0eJETuWAJGnJ9afsl1srmwPrI+yBCkge5EycXXbYRyvL29zZVUWQCY7InPRCv3GDXuZNw==
+
+mime-db@1.52.0:
+  version "1.52.0"
+  resolved "https://registry.yarnpkg.com/mime-db/-/mime-db-1.52.0.tgz#bbabcdc02859f4987301c856e3387ce5ec43bf70"
+  integrity sha512-sPU4uV7dYlvtWJxwwxHD0PuihVNiE7TyAbQ5SWxDCB9mUYvOgroQOwYQQOKPJ8CIbE+1ETVlOoK1UC2nU3gYvg==
+
+mime-types@^2.1.12:
+  version "2.1.35"
+  resolved "https://registry.yarnpkg.com/mime-types/-/mime-types-2.1.35.tgz#381a871b62a734450660ae3deee44813f70d959a"
+  integrity sha512-ZDY+bPm5zTTF+YpCrAU9nK0UgICYPT0QtT1NZWFv4s++TNkcgVaT0g6+4R2uI4MjQjzysHB1zxuWL50hzaeXiw==
+  dependencies:
+    mime-db "1.52.0"
+
+ms@^2.1.3:
+  version "2.1.3"
+  resolved "https://registry.yarnpkg.com/ms/-/ms-2.1.3.tgz#574c8138ce1d2b5861f0b44579dbadd60c6615b2"
+  integrity sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==
+
+object-assign@^4.1.1:
+  version "4.1.1"
+  resolved "https://registry.yarnpkg.com/object-assign/-/object-assign-4.1.1.tgz#2109adc7965887cfc05cbbd442cac8bfbb360863"
+  integrity sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==
+
+parent-module@^1.0.0:
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/parent-module/-/parent-module-1.0.1.tgz#691d2709e78c79fae3a156622452d00762caaaa2"
+  integrity sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g==
+  dependencies:
+    callsites "^3.0.0"
+
+parse-json@^5.0.0:
+  version "5.2.0"
+  resolved "https://registry.yarnpkg.com/parse-json/-/parse-json-5.2.0.tgz#c76fc66dee54231c962b22bcc8a72cf2f99753cd"
+  integrity sha512-ayCKvm/phCGxOkYRSCM82iDwct8/EonSEgCSxWxD7ve6jHggsFl4fZVQBPRNgQoKiuV/odhFrGzQXZwbifC8Rg==
+  dependencies:
+    "@babel/code-frame" "^7.0.0"
+    error-ex "^1.3.1"
+    json-parse-even-better-errors "^2.3.0"
+    lines-and-columns "^1.1.6"
+
+path-parse@^1.0.7:
+  version "1.0.7"
+  resolved "https://registry.yarnpkg.com/path-parse/-/path-parse-1.0.7.tgz#fbc114b60ca42b30d9daf5858e4bd68bbedb6735"
+  integrity sha512-LDJzPVEEEPR+y48z93A0Ed0yXb8pAByGWo/k5YYdYgpY2/2EsOsksJrq7lOHxryrVOn1ejG6oAp8ahvOIQD8sw==
+
+path-type@^4.0.0:
+  version "4.0.0"
+  resolved "https://registry.yarnpkg.com/path-type/-/path-type-4.0.0.tgz#84ed01c0a7ba380afe09d90a8c180dcd9d03043b"
+  integrity sha512-gDKb8aZMDeD/tZWs9P6+q0J9Mwkdl6xMV8TjnGP3qJVJ06bdMgkbBlLU8IdfOsIsFz2BW1rNVT3XuNEl8zPAvw==
+
+picocolors@^1.0.0:
+  version "1.1.1"
+  resolved "https://registry.yarnpkg.com/picocolors/-/picocolors-1.1.1.tgz#3d321af3eab939b083c8f929a1d12cda81c26b6b"
+  integrity sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==
+
+prop-types@^15.6.0, prop-types@^15.6.2:
+  version "15.8.1"
+  resolved "https://registry.yarnpkg.com/prop-types/-/prop-types-15.8.1.tgz#67d87bf1a694f48435cf332c24af10214a3140b5"
+  integrity sha512-oj87CgZICdulUohogVAR7AjlC0327U4el4L6eAvOqCeudMDVU0NThNaV+b9Df4dXgSP1gXMTnPdhfe/2qDH5cg==
+  dependencies:
+    loose-envify "^1.4.0"
+    object-assign "^4.1.1"
+    react-is "^16.13.1"
+
+proxy-from-env@^1.1.0:
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/proxy-from-env/-/proxy-from-env-1.1.0.tgz#e102f16ca355424865755d2c9e8ea4f24d58c3e2"
+  integrity sha512-D+zkORCbA9f1tdWRK0RaCR3GPv50cMxcrz4X8k5LTSUD1Dkw47mKJEZQNunItRTkWwgtaUSo1RVFRIG9ZXiFYg==
+
+react-is@^16.13.1, react-is@^16.7.0:
+  version "16.13.1"
+  resolved "https://registry.yarnpkg.com/react-is/-/react-is-16.13.1.tgz#789729a4dc36de2999dc156dd6c1d9c18cea56a4"
+  integrity sha512-24e6ynE2H+OKt4kqsOvNd8kBpV65zoxbA4BVsEOB3ARVWQki/DHzaUoC5KuON/BiccDaCCTZBuOcfZs70kR8bQ==
+
+react-select@^5.10.0:
+  version "5.10.0"
+  resolved "https://registry.yarnpkg.com/react-select/-/react-select-5.10.0.tgz#9b5f4544cfecdfc744184b87651468ee0fb6e172"
+  integrity sha512-k96gw+i6N3ExgDwPIg0lUPmexl1ygPe6u5BdQFNBhkpbwroIgCNXdubtIzHfThYXYYTubwOBafoMnn7ruEP1xA==
+  dependencies:
+    "@babel/runtime" "^7.12.0"
+    "@emotion/cache" "^11.4.0"
+    "@emotion/react" "^11.8.1"
+    "@floating-ui/dom" "^1.0.1"
+    "@types/react-transition-group" "^4.4.0"
+    memoize-one "^6.0.0"
+    prop-types "^15.6.0"
+    react-transition-group "^4.3.0"
+    use-isomorphic-layout-effect "^1.2.0"
+
+react-transition-group@^4.3.0:
+  version "4.4.5"
+  resolved "https://registry.yarnpkg.com/react-transition-group/-/react-transition-group-4.4.5.tgz#e53d4e3f3344da8521489fbef8f2581d42becdd1"
+  integrity sha512-pZcd1MCJoiKiBR2NRxeCRg13uCXbydPnmB4EOeRrY7480qNWO8IIgQG6zlDkm6uRMsURXPuKq0GWtiM59a5Q6g==
+  dependencies:
+    "@babel/runtime" "^7.5.5"
+    dom-helpers "^5.0.1"
+    loose-envify "^1.4.0"
+    prop-types "^15.6.2"
+
+regenerator-runtime@^0.14.0:
+  version "0.14.1"
+  resolved "https://registry.yarnpkg.com/regenerator-runtime/-/regenerator-runtime-0.14.1.tgz#356ade10263f685dda125100cd862c1db895327f"
+  integrity sha512-dYnhHh0nJoMfnkZs6GmmhFknAGRrLznOu5nc9ML+EJxGvrx6H7teuevqVqCuPcPK//3eDrrjQhehXVx9cnkGdw==
+
+resolve-from@^4.0.0:
+  version "4.0.0"
+  resolved "https://registry.yarnpkg.com/resolve-from/-/resolve-from-4.0.0.tgz#4abcd852ad32dd7baabfe9b40e00a36db5f392e6"
+  integrity sha512-pb/MYmXstAkysRFx8piNI1tGFNQIFA3vkE3Gq4EuA1dF6gHp/+vgZqsCGJapvy8N3Q+4o7FwvquPJcnZ7RYy4g==
+
+resolve@^1.19.0:
+  version "1.22.10"
+  resolved "https://registry.yarnpkg.com/resolve/-/resolve-1.22.10.tgz#b663e83ffb09bbf2386944736baae803029b8b39"
+  integrity sha512-NPRy+/ncIMeDlTAsuqwKIiferiawhefFJtkNSW0qZJEqMEb+qBt/77B/jGeeek+F0uOeN05CDa6HXbbIgtVX4w==
+  dependencies:
+    is-core-module "^2.16.0"
+    path-parse "^1.0.7"
+    supports-preserve-symlinks-flag "^1.0.0"
+
+source-map@^0.5.7:
+  version "0.5.7"
+  resolved "https://registry.yarnpkg.com/source-map/-/source-map-0.5.7.tgz#8a039d2d1021d22d1ea14c80d8ea468ba2ef3fcc"
+  integrity sha512-LbrmJOMUSdEVxIKvdcJzQC+nQhe8FUZQTXQy6+I75skNgn3OoQ0DZA8YnFa7gp8tqtL3KPf1kmo0R5DoApeSGQ==
+
+stylis@4.2.0:
+  version "4.2.0"
+  resolved "https://registry.yarnpkg.com/stylis/-/stylis-4.2.0.tgz#79daee0208964c8fe695a42fcffcac633a211a51"
+  integrity sha512-Orov6g6BB1sDfYgzWfTHDOxamtX1bE/zo104Dh9e6fqJ3PooipYyfJ0pUmrZO2wAvO8YbEyeFrkV91XTsGMSrw==
+
+supports-preserve-symlinks-flag@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/supports-preserve-symlinks-flag/-/supports-preserve-symlinks-flag-1.0.0.tgz#6eda4bd344a3c94aea376d4cc31bc77311039e09"
+  integrity sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==
+
+use-isomorphic-layout-effect@^1.2.0:
+  version "1.2.0"
+  resolved "https://registry.yarnpkg.com/use-isomorphic-layout-effect/-/use-isomorphic-layout-effect-1.2.0.tgz#afb292eb284c39219e8cb8d3d62d71999361a21d"
+  integrity sha512-q6ayo8DWoPZT0VdG4u3D3uxcgONP3Mevx2i2b0434cwWBoL+aelL1DzkXI6w3PhTZzUeR2kaVlZn70iCiseP6w==
+
+yaml@^1.10.0:
+  version "1.10.2"
+  resolved "https://registry.yarnpkg.com/yaml/-/yaml-1.10.2.tgz#2301c5ffbf12b467de8da2333a459e29e7920e4b"
+  integrity sha512-r3vXyErRCYJ7wg28yvBY5VSoAF8ZvlcW9/BwUzEtUsjvX/DKs24dIkuwjtuprwJJHsbyUbLApepYTR1BN4uHrg==
+
+
