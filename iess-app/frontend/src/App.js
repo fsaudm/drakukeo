@@ -1,21 +1,19 @@
-// v2.2/App.js
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import Select from "react-select";
+import AsyncSelect from "react-select/async";
 import "./App.css";
 
-const codigoSelectStyles = {
-  control: (provided) => ({ ...provided, backgroundColor: "white" }),
-  menu: (provided) => ({ ...provided, backgroundColor: "white" }),
-  option: (provided, state) => ({
-    ...provided,
-    color: state.isSelected ? "white" : "black",
-    backgroundColor: state.isSelected ? "#007bff" : state.isFocused ? "#f0f0f0" : "white"
-  })
+// Force wide dropdowns
+const wideSelectStyles = {
+  container: (provided) => ({ ...provided, width: "400px" }),
+  menu: (provided) => ({ ...provided, width: "400px" })
 };
 
 const API_BASE = "";
 const GRID_COLUMNS = [
+  "FECHA DE INGRESO",
+  "FECHA DE EGRESO",
   "CÓDIGO DEPENDENCIA (ESPECIALIDAD)",
   "FECHA ANTENCION",
   "CEDULA",
@@ -35,81 +33,52 @@ function App() {
   const [gridData, setGridData] = useState([]);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Main form fields
   const [paciente, setPaciente] = useState(null);
   const [diagnostico, setDiagnostico] = useState({ nameSelect: null, codeSelect: null });
   const [diagnosticoSecundario, setDiagnosticoSecundario] = useState({ nameSelect: null, codeSelect: null });
+  const [fechaIngreso, setFechaIngreso] = useState("");
+  const [fechaEgreso, setFechaEgreso] = useState("");
+
+  // Dynamic rows for procedures, medications, and insumos
   const [procedimientos, setProcedimientos] = useState([{ ...blankRow }]);
   const [medicamentos, setMedicamentos] = useState([{ ...blankRow }]);
   const [insumos, setInsumos] = useState([{ ...blankRow }]);
+
+  // Master lists for small sets
   const [patientsMaster, setPatientsMaster] = useState([]);
-  const [diagnosticsMaster, setDiagnosticsMaster] = useState([]);
-  const [proceduresMaster, setProceduresMaster] = useState([]);
   const [medicationsMaster, setMedicationsMaster] = useState([]);
-  const [formKey, setFormKey] = useState(Date.now());
+
+  // For multi-row selection in grid
   const [selectedRows, setSelectedRows] = useState([]);
+  const [formKey, setFormKey] = useState(Date.now());
 
   useEffect(() => {
     axios.get(`${API_BASE}/patients/full/`)
       .then(res => setPatientsMaster(res.data.map(p => ({ value: p, label: p }))));
-    axios.get(`${API_BASE}/diagnostics/full/`)
-      .then(res => setDiagnosticsMaster(res.data.map(item => ({
-        value: item.NOMBRE,
-        label: item.NOMBRE,
-        code: item["CÓDIGO"]
-      }))));
-    axios.get(`${API_BASE}/procedures/full/`)
-      .then(res => setProceduresMaster(res.data.map(item => ({
-        value: item.DESCRIPCIÓN,
-        label: `${item.CODIGO ? String(item.CODIGO) : String(item["CÓDIGO"])} - ${item.DESCRIPCIÓN}`,
-        code: item.CODIGO ? String(item.CODIGO) : String(item["CÓDIGO"])
-      }))));
     axios.get(`${API_BASE}/medications/full/`)
-      .then(res => setMedicationsMaster(res.data.map(item => ({
-        value: item.DESCRIPCIÓN,
-        label: `${item.CODIGO ? String(item.CODIGO) : String(item["CÓDIGO"])} - ${item.DESCRIPCIÓN}`,
-        code: item.CODIGO ? String(item.CODIGO) : String(item["CÓDIGO"])
-      }))));
+      .then(res => {
+        const meds = res.data.map(item => ({
+          value: item.concat,
+          label: item.concat,
+          code: item.CODIGO ? item.CODIGO.toString() : ""
+        }));
+        setMedicationsMaster(meds);
+      });
     fetchGridData();
   }, []);
 
-  const handleProcSelect = (index, selectedOption) => {
-    setProcedimientos(prev => {
-      const newRows = [...prev];
-      newRows[index] = {
-        name: selectedOption?.value || "",
-        code: selectedOption?.code ? String(selectedOption.code) : "",
-        quantity: newRows[index].quantity
-      };
-      if (index === newRows.length - 1 && selectedOption) {
-        newRows.push({ ...blankRow });
-      }
-      return newRows;
-    });
+  const fetchGridData = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/data/`);
+      setGridData(res.data);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
-  const handleMedSelect = (index, selectedOption) => {
-    setMedicamentos(prev => {
-      const newRows = [...prev];
-      newRows[index] = {
-        name: selectedOption?.value || "",
-        code: selectedOption?.code ? String(selectedOption.code) : "",
-        quantity: newRows[index].quantity
-      };
-      if (index === newRows.length - 1 && selectedOption) {
-        newRows.push({ ...blankRow });
-      }
-      return newRows;
-    });
-  };
-
-  const handleQuantityChange = (setter, index, value) => {
-    setter(prev => {
-      const newRows = [...prev];
-      newRows[index].quantity = Number(value) || 0;
-      return newRows;
-    });
-  };
-
+  // File upload handler
   const handleFileUpload = async (e) => {
     const selectedFile = e.target.files[0];
     const formData = new FormData();
@@ -129,26 +98,100 @@ function App() {
     }
   };
 
-  const fetchGridData = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}/data/`);
-      setGridData(res.data);
-    } catch (error) {
-      console.error(error);
-    }
+  // Async load for Diagnóstico (by name)
+  const loadDiagnosticNameOptions = (inputValue, callback) => {
+    if (!inputValue) return callback([]);
+    axios.get(`${API_BASE}/search/diagnostics/?query=${encodeURIComponent(inputValue)}`)
+      .then(res => {
+        const options = res.data.map(item => ({
+          label: item.NOMBRE,
+          value: item.CÓDIGO, // using code as value
+          code: item.CÓDIGO
+        }));
+        callback(options);
+      })
+      .catch(() => callback([]));
+  };
+
+  // Async load for Diagnóstico (by code)
+  const loadDiagnosticCodeOptions = (inputValue, callback) => {
+    if (!inputValue) return callback([]);
+    axios.get(`${API_BASE}/search/diagnostics/code/?query=${encodeURIComponent(inputValue)}`)
+      .then(res => {
+        const options = res.data.map(item => ({
+          label: item.CÓDIGO,
+          value: item.CÓDIGO,
+          name: item.NOMBRE
+        }));
+        callback(options);
+      })
+      .catch(() => callback([]));
+  };
+
+  const loadProcedureOptions = (inputValue, callback) => {
+    if (!inputValue) return callback([]);
+    axios.get(`${API_BASE}/search/procedures/?query=${encodeURIComponent(inputValue)}`)
+      .then(res => {
+        const options = res.data.map(it => ({
+          label: `${it.CÓDIGO} - ${it.DESCRIPCIÓN}`,
+          value: it.DESCRIPCIÓN,
+          code: it.CÓDIGO
+        }));
+        callback(options);
+      })
+      .catch(() => callback([]));
+  };
+
+  // Dynamic rows: Procedimientos
+  const handleProcSelect = (index, selectedOption) => {
+    setProcedimientos(prev => {
+      const newRows = [...prev];
+      newRows[index] = {
+        name: selectedOption?.value || "",
+        code: selectedOption?.code || "",
+        quantity: newRows[index].quantity
+      };
+      if (index === newRows.length - 1 && selectedOption)
+        newRows.push({ ...blankRow });
+      return newRows;
+    });
+  };
+
+  // Dynamic rows: Medicamentos
+  const handleMedSelect = (index, selectedOption) => {
+    setMedicamentos(prev => {
+      const newRows = [...prev];
+      newRows[index] = {
+        // Ensure code is converted to string
+        name: selectedOption?.value || "",
+        code: selectedOption?.code ? selectedOption.code.toString() : "",
+        quantity: newRows[index].quantity
+      };
+      if (index === newRows.length - 1 && selectedOption)
+        newRows.push({ ...blankRow });
+      return newRows;
+    });
+  };
+
+  const handleQuantityChange = (setter, index, value) => {
+    setter(prev => {
+      const newRows = [...prev];
+      newRows[index].quantity = Number(value) || 0;
+      return newRows;
+    });
   };
 
   const handleInsumoChange = (index, field, value) => {
     setInsumos(prev => {
       const newRows = [...prev];
       newRows[index] = { ...newRows[index], [field]: value };
-      if (index === newRows.length - 1 && value) {
+      if (index === newRows.length - 1 && value)
         newRows.push({ ...blankRow });
-      }
       return newRows;
     });
   };
 
+  // Handlers for Paciente and Diagnósticos
   const handlePacienteSelect = (selectedOption) => {
     setPaciente(selectedOption);
   };
@@ -157,32 +200,58 @@ function App() {
     setDiagnostico(prev => ({
       ...prev,
       nameSelect: selectedOption,
-      codeSelect: selectedOption ? { value: selectedOption.code, label: selectedOption.code } : null
+      codeSelect: selectedOption
+        ? { value: selectedOption.code.toString(), label: selectedOption.code.toString(), code: selectedOption.code.toString() }
+        : null
     }));
   };
 
   const handleDiagnosticoCodeSelect = (selectedOption) => {
-    const option = diagnosticsMaster.find(opt => String(opt.code) === String(selectedOption ? selectedOption.value : ""));
     setDiagnostico(prev => ({
       ...prev,
       codeSelect: selectedOption,
-      nameSelect: option ? { value: option.value, label: option.value, code: option.code } : prev.nameSelect
+      nameSelect: selectedOption
+        ? { value: selectedOption.value, label: selectedOption.name, code: selectedOption.value }
+        : null
     }));
   };
 
+  const handleDiagnosticoSecNameSelect = (selectedOption) => {
+    setDiagnosticoSecundario(prev => ({
+      ...prev,
+      nameSelect: selectedOption,
+      codeSelect: selectedOption
+        ? { value: selectedOption.code.toString(), label: selectedOption.code.toString(), code: selectedOption.code.toString() }
+        : null
+    }));
+  };
+
+  const handleDiagnosticoSecCodeSelect = (selectedOption) => {
+    setDiagnosticoSecundario(prev => ({
+      ...prev,
+      codeSelect: selectedOption,
+      nameSelect: selectedOption
+        ? { value: selectedOption.value, label: selectedOption.name, code: selectedOption.value }
+        : null
+    }));
+  };
+
+  // Submit
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const payload = {
-      paciente: paciente ? paciente.value : "",
-      diagnostico_name: diagnostico.nameSelect ? diagnostico.nameSelect.value : "",
-      diagnostico_code: diagnostico.codeSelect ? diagnostico.codeSelect.value : "",
-      diagnostico_secundario_name: diagnosticoSecundario.nameSelect ? diagnosticoSecundario.nameSelect.value : "",
-      diagnostico_secundario_code: diagnosticoSecundario.codeSelect ? diagnosticoSecundario.codeSelect.value : "",
-      procedimientos: procedimientos.filter(row => row.name),
-      medicamentos: medicamentos.filter(row => row.name),
-      insumos: insumos.filter(row => row.name)
-    };
     setLoading(true);
+    const payload = {
+      paciente: paciente?.value || "",
+      diagnostico_name: diagnostico.nameSelect?.label || "",
+      diagnostico_code: diagnostico.nameSelect?.value || "",
+      diagnostico_secundario_name: diagnosticoSecundario.nameSelect?.label || "",
+      diagnostico_secundario_code: diagnosticoSecundario.nameSelect?.value || "",
+      fecha_ingreso: fechaIngreso,
+      fecha_egreso: fechaEgreso,
+      procedimientos: procedimientos.filter(r => r.name),
+      medicamentos: medicamentos.filter(r => r.name),
+      insumos: insumos.filter(r => r.name)
+    };
     try {
       const res = await axios.post(`${API_BASE}/add/`, payload);
       setStatus(res.data.message);
@@ -193,6 +262,21 @@ function App() {
       setStatus("Error adding entry");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/download/`, { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", "data.xlsx");
+      document.body.appendChild(link);
+      link.click();
+    } catch (error) {
+      console.error(error);
+      setStatus("Error downloading file");
     }
   };
 
@@ -209,36 +293,45 @@ function App() {
   };
 
   const handleRowSelect = (id, checked) => {
-    setSelectedRows(prev => checked ? [...prev, id] : prev.filter(x => x !== id));
+    setSelectedRows(prev => (checked ? [...prev, id] : prev.filter(x => x !== id)));
   };
 
   const handleRowClick = (row) => {
     setPaciente({ value: row["NOMBRE DE BENEFICIARIO"], label: row["NOMBRE DE BENEFICIARIO"] });
     if (row["DIAGNOSTICO PRINCIPAL CIE-10"]) {
       axios.get(`${API_BASE}/sync/diagnostic/?code=${row["DIAGNOSTICO PRINCIPAL CIE-10"]}`)
-        .then((res) => setDiagnostico({
-          nameSelect: { value: res.data.name, label: res.data.name, code: res.data.code },
-          codeSelect: { value: res.data.code, label: res.data.code, code: res.data.code }
-        }))
-        .catch((err) => console.error(err));
+        .then(res => {
+          setDiagnostico({
+            nameSelect: { label: res.data.name, value: res.data.code, code: res.data.code },
+            codeSelect: { label: res.data.code, value: res.data.code, code: res.data.code }
+          });
+        })
+        .catch(err => console.error(err));
     }
     if (row["DIAGNSITICO SECUNDARIO 1"]) {
       axios.get(`${API_BASE}/sync/diagnostic/?code=${row["DIAGNSITICO SECUNDARIO 1"]}`)
-        .then((res) => setDiagnosticoSecundario({
-          nameSelect: { value: res.data.name, label: res.data.name, code: res.data.code },
-          codeSelect: { value: res.data.code, label: res.data.code, code: res.data.code }
-        }))
-        .catch((err) => console.error(err));
+        .then(res => {
+          setDiagnosticoSecundario({
+            nameSelect: { label: res.data.name, value: res.data.code, code: res.data.code },
+            codeSelect: { label: res.data.code, value: res.data.code, code: res.data.code }
+          });
+        })
+        .catch(err => console.error(err));
     }
+    setFechaIngreso(row["FECHA DE INGRESO"] || "");
+    setFechaEgreso(row["FECHA DE EGRESO"] || "");
   };
 
   const handleClear = () => {
     setPaciente(null);
     setDiagnostico({ nameSelect: null, codeSelect: null });
     setDiagnosticoSecundario({ nameSelect: null, codeSelect: null });
+    setFechaIngreso("");
+    setFechaEgreso("");
     setProcedimientos([{ ...blankRow }]);
     setMedicamentos([{ ...blankRow }]);
     setInsumos([{ ...blankRow }]);
+    setSelectedRows([]);
     setFormKey(Date.now());
   };
 
@@ -252,6 +345,7 @@ function App() {
           <input type="file" id="fileUpload" accept=".xlsx,.csv" onChange={handleFileUpload} />
         </div>
         <form key={formKey} onSubmit={handleSubmit}>
+          {/* Paciente */}
           <div className="form-group">
             <label>Paciente:</label>
             <Select
@@ -260,79 +354,88 @@ function App() {
               onChange={handlePacienteSelect}
               placeholder="Seleccione paciente"
               isClearable
+              styles={wideSelectStyles}
             />
           </div>
+          {/* Diagnóstico Principal */}
           <div className="form-group diagnostico-group">
-            <label>Diagnóstico:</label>
+            <label>Diagnóstico Principal:</label>
             <div className="diagnostico-fields">
-              <Select
-                options={diagnosticsMaster}
+              <AsyncSelect
+                cacheOptions
+                defaultOptions
+                loadOptions={loadDiagnosticNameOptions}
                 value={diagnostico.nameSelect}
                 onChange={handleDiagnosticoNameSelect}
-                placeholder="Nombre diagnóstico"
-                isClearable
+                placeholder="Buscar diagnóstico principal..."
+                styles={wideSelectStyles}
               />
-              <Select
-                options={diagnosticsMaster.map(opt => ({
-                  value: opt.code,
-                  label: opt.code,
-                  code: opt.code
-                }))}
+              <AsyncSelect
+                cacheOptions
+                defaultOptions
+                loadOptions={loadDiagnosticCodeOptions}
                 value={diagnostico.codeSelect}
                 onChange={handleDiagnosticoCodeSelect}
-                placeholder="Código diagnóstico"
-                isClearable
-                styles={codigoSelectStyles}
+                placeholder="Código diagnóstico principal"
+                styles={wideSelectStyles}
               />
             </div>
           </div>
-          {/* New secondary diagnosis group */}
+          {/* Diagnóstico Secundario */}
           <div className="form-group diagnostico-group">
             <label>Diagnóstico Secundario:</label>
             <div className="diagnostico-fields">
-              <Select
-                options={diagnosticsMaster}
+              <AsyncSelect
+                cacheOptions
+                defaultOptions
+                loadOptions={loadDiagnosticNameOptions}
                 value={diagnosticoSecundario.nameSelect}
-                onChange={(selectedOption) =>
-                  setDiagnosticoSecundario(prev => ({
-                    ...prev,
-                    nameSelect: selectedOption,
-                    codeSelect: selectedOption ? { value: selectedOption.code, label: selectedOption.code } : null
-                  }))
-                }
-                placeholder="Nombre diagnóstico secundario"
-                isClearable
+                onChange={handleDiagnosticoSecNameSelect}
+                placeholder="Buscar diagnóstico secundario..."
+                styles={wideSelectStyles}
               />
-              <Select
-                options={diagnosticsMaster.map(opt => ({
-                  value: opt.code,
-                  label: opt.code,
-                  code: opt.code
-                }))}
+              <AsyncSelect
+                cacheOptions
+                defaultOptions
+                loadOptions={loadDiagnosticCodeOptions}
                 value={diagnosticoSecundario.codeSelect}
-                onChange={(selectedOption) =>
-                  setDiagnosticoSecundario(prev => ({
-                    ...prev,
-                    codeSelect: selectedOption,
-                    nameSelect: diagnosticsMaster.find(opt => String(opt.code) === String(selectedOption ? selectedOption.value : "")) || prev.nameSelect
-                  }))
-                }
+                onChange={handleDiagnosticoSecCodeSelect}
                 placeholder="Código diagnóstico secundario"
-                isClearable
-                styles={codigoSelectStyles}
+                styles={wideSelectStyles}
               />
             </div>
           </div>
+          {/* Fechas */}
+          <div className="form-group">
+            <label>Fecha de Ingreso:</label>
+            <input
+              type="date"
+              value={fechaIngreso}
+              onChange={(e) => setFechaIngreso(e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label>Fecha de Egreso:</label>
+            <input
+              type="date"
+              value={fechaEgreso}
+              onChange={(e) => setFechaEgreso(e.target.value)}
+            />
+          </div>
+          {/* Procedimientos */}
           <fieldset className="fieldset-group">
             <legend>Procedimientos</legend>
             {procedimientos.map((item, i) => (
               <div key={`proc-${i}`} className="row-group">
-                <Select
-                  options={proceduresMaster}
-                  value={proceduresMaster.find(opt => opt.value === item.name && opt.code === item.code)}
+                <AsyncSelect
+                  cacheOptions
+                  defaultOptions
+                  loadOptions={loadProcedureOptions}
+                  value={item.name ? { value: item.name, label: item.name, code: item.code } : null}
                   onChange={(selected) => handleProcSelect(i, selected)}
-                  placeholder="Seleccionar procedimiento"
+                  placeholder="Buscar procedimiento..."
                   isClearable
+                  styles={wideSelectStyles}
                 />
                 <input
                   type="number"
@@ -344,16 +447,22 @@ function App() {
               </div>
             ))}
           </fieldset>
+          {/* Medicamentos */}
           <fieldset className="fieldset-group">
             <legend>Medicamentos</legend>
             {medicamentos.map((item, i) => (
               <div key={`med-${i}`} className="row-group">
                 <Select
                   options={medicationsMaster}
-                  value={medicationsMaster.find(opt => opt.value === item.name && opt.code === item.code)}
+                  value={
+                    item.name
+                      ? { value: item.name, label: item.name, code: item.code ? item.code.toString() : "" }
+                      : null
+                  }
                   onChange={(selected) => handleMedSelect(i, selected)}
                   placeholder="Seleccionar medicamento"
                   isClearable
+                  styles={wideSelectStyles}
                 />
                 <input
                   type="number"
@@ -365,6 +474,7 @@ function App() {
               </div>
             ))}
           </fieldset>
+          {/* Insumos */}
           <fieldset className="fieldset-group">
             <legend>Insumos</legend>
             {insumos.map((item, i) => (
@@ -385,16 +495,19 @@ function App() {
               </div>
             ))}
           </fieldset>
+          {/* Submit & Clear */}
           <div className="button-group">
             <button type="submit" className="btn-submit">Agregar Entrada</button>
             <button type="button" onClick={handleClear} className="btn-clear">Limpiar Todo</button>
           </div>
         </form>
+        {/* Download */}
         <div className="download-group">
           <button onClick={handleDownload} className="btn-download">Descargar Archivo</button>
         </div>
         {status && <p className="status">{status}</p>}
       </div>
+      {/* Grid View */}
       <div className="grid-container">
         <h2>Datos Cargados</h2>
         {selectedRows.length > 0 && (
@@ -404,13 +517,13 @@ function App() {
           <thead>
             <tr>
               <th>Seleccionar</th>
-              {GRID_COLUMNS.map((col) => (
+              {GRID_COLUMNS.map(col => (
                 <th key={col}>{col}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {gridData.map((row) => (
+            {gridData.map(row => (
               <tr key={row.id} onClick={() => handleRowClick(row)}>
                 <td>
                   <input
@@ -420,7 +533,7 @@ function App() {
                     onChange={(e) => handleRowSelect(row.id, e.target.checked)}
                   />
                 </td>
-                {GRID_COLUMNS.map((col) => (
+                {GRID_COLUMNS.map(col => (
                   <td key={col}>{row[col]}</td>
                 ))}
               </tr>
