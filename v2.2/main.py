@@ -18,8 +18,8 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",
-        "https://YOUR-NGROK-OR-RENDER-URL"
+        "http://localhost:8000",
+        "https://efbd-67-173-101-35.ngrok-free.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],

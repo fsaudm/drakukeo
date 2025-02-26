@@ -20,7 +20,9 @@ body {
   max-height: 100vh;
 }
 
+/* Make the grid container relative so that absolute positioning inside works */
 .grid-container {
+  position: relative;
   flex: 1;
   padding: 20px;
   background-color: #ffffff;
@@ -110,21 +112,23 @@ h1, h2 {
   background-color: #c82333;
 }
 
-/* Delete button styling */
 .btn-delete {
+  position: fixed;
+  bottom: 50px;    /* 50px from the bottom */
+  right: 30px;     /* Adjust this value as needed */
+  z-index: 1000;
   background-color: #dc3545;
   color: white;
   border: none;
-  padding: 10px;
-  width: auto;
+  padding: 10px 15px;
   border-radius: 4px;
   cursor: pointer;
-  margin-bottom: 10px;
 }
 
 .btn-delete:hover {
   background-color: #c82333;
 }
+
 
 .grid-table {
   width: 100%;

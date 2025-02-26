@@ -1,11 +1,15 @@
-# v2 App: FastAPI + React
+# v2.2 App: FastAPI + React (Development Build & Deployment)
 
-This project is a professional-level web application that combines a FastAPI backend with a React frontend. The app lets you:
+This project is a professional-level web application that combines a FastAPI backend with a React frontend. In this repository, you’ll find the development version (v2.2) used for testing and feature development. The official production deployment is maintained in the **iess-app** directory.
+
+The app lets you:
 
 - **Upload a main Excel file** ("archivo main.xlsx") that contains patient data.
 - **Display a grid view** of the patient records once the file is uploaded.
-- **Add new entries** using 5 input fields each for procedures, medications, and supplies.
-- **Synchronize diagnostic fields** so that the diagnostic name and code update in tandem (each in its own box).
+- **Add new entries** using multiple input fields for procedures, medications, and supplies.
+- **Synchronize diagnostic fields** so that the diagnostic name and code update in tandem (each in its own input).
+
+---
 
 ## Table of Contents
 
@@ -14,56 +18,68 @@ This project is a professional-level web application that combines a FastAPI bac
 - [Installation](#installation)
   - [Backend Setup](#backend-setup)
   - [Frontend Setup](#frontend-setup)
-- [Running the Application](#running-the-application)
-  - [Start the FastAPI Backend](#start-the-fastapi-backend)
-  - [Start the React Frontend](#start-the-react-frontend)
+- [Running the Application Locally](#running-the-application-locally)
+  - [Starting the FastAPI Backend](#starting-the-fastapi-backend)
+  - [Starting the React Frontend](#starting-the-react-frontend)
 - [API Endpoints](#api-endpoints)
+- [Deployment on Render](#deployment-on-render)
 - [Additional Notes](#additional-notes)
+
+---
 
 ## Overview
 
 The v2 App consists of two components:
 
-1. **FastAPI Backend (`main.py`):**
+1. **FastAPI Backend (**``**)**
+
    - Loads and saves patient data from an Excel file.
    - Provides endpoints for:
      - Uploading the main file.
      - Retrieving grid data.
      - Autocomplete searches for patients, diagnostics, procedures, and medications.
      - Synchronizing diagnostic fields (by name or code).
-     - Adding new entries (with 5 fields each for procedures, medications, and supplies).
+     - Adding new entries.
    - Saves the Excel file using the same column names and applies colored fills based on patient and date.
 
-2. **React Frontend (in the `frontend/` directory):**
+2. **React Frontend (in the **``** directory)**
+
    - Provides a user interface to:
      - Upload the main file.
      - View the grid data of patient records.
      - Enter new entries with separate fields for:
        - Patient name.
        - Diagnostic name and diagnostic code (which sync with each other).
-       - Five rows for procedures, medications, and supplies (each with fields for name, code, and quantity).
+       - Multiple rows for procedures, medications, and supplies.
+   - **Note:** Large dropdown lists (e.g., diagnostics with 19k items) are now loaded asynchronously via server‑side search for better performance.
+
+---
 
 ## Prerequisites
 
 ### Backend
-- Python 3.9+
-- Required Python packages:
-  - fastapi
-  - uvicorn
-  - pandas
-  - openpyxl
-  - pydantic
-  - python-multipart
+
+- Python 3.9+ (we recommend using a virtual environment)
+- Required Python packages (see [requirements.txt](requirements.txt)):
+  - fastapi==0.115.8
+  - uvicorn==0.34.0
+  - pandas==2.2.3
+  - openpyxl==3.1.5
+  - pydantic==2.10.6
+  - python-multipart==0.0.20
 
 ### Frontend
+
 - Node.js (latest LTS recommended)
 - Yarn (or npm; these instructions use Yarn)
+
+---
 
 ## Installation
 
 ### Backend Setup
 
-1. **Place your backend files** (including `main.py`, `maestro_procedimientos.xlsx`, `maestro_medicamentos.xlsx`, and `maestro_diagnosticos.xlsx`) in a folder (e.g., `backend/`).
+1. **Clone the repository** and navigate to the project directory.
 
 2. **Create and activate a Python virtual environment (optional but recommended):**
 
@@ -75,68 +91,49 @@ The v2 App consists of two components:
 3. **Install the required Python packages:**
 
    ```bash
-   pip install fastapi uvicorn pandas openpyxl python-multipart
+   pip install -r requirements.txt
    ```
 
 ### Frontend Setup
 
-1. **Install Node.js and Yarn:**
-   - Download Node.js from [nodejs.org](https://nodejs.org/).
-   - Install Yarn globally (if not already installed):
-
-     ```bash
-     npm install -g yarn
-     ```
-
-2. **Create a new React app:**
-
-   ```bash
-   yarn create react-app frontend
-   ```
-
-3. **Navigate to the React project folder:**
+1. **Navigate to the **``** directory:**
 
    ```bash
    cd frontend
    ```
 
-4. **Install required dependencies:**
+2. **Install required dependencies:**
 
    ```bash
-   yarn add axios react-select
+   yarn install
    ```
 
-5. **Replace the default files:**
-   - Replace `src/App.js` with your custom React code.
-   - Replace `src/App.css` with your custom CSS.
-   - (Optional) Delete unused files like `logo.svg`.
+3. **Build the React app for static serving by FastAPI:**
 
+   ```bash
+   yarn build
+   ```
 
-6. **Build the React app for staticfrom FastAPI**
+---
 
-    ```bash
-    yarn build
-    ```
+## Running the Application Locally
 
-
-## Running the Application
-
-### Start the FastAPI Backend
+### Starting the FastAPI Backend
 
 1. **Navigate to your backend folder** (where `main.py` is located).
 
-2. **Start the server using uvicorn:**
+2. **Start the server using Uvicorn:**
 
    ```bash
    uvicorn main:app --reload
    ```
 
-3. **Test the backend API:**  
-   Open your browser and visit [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) to see interactive API documentation.
+3. **Test the backend API:**\
+   Open your browser and visit [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) for interactive API documentation.
 
-### Start the React Frontend
+### Starting the React Frontend (Development Mode)
 
-1. **Navigate to the `frontend` folder:**
+1. **Navigate to the **``** folder:**
 
    ```bash
    cd frontend
@@ -148,54 +145,70 @@ The v2 App consists of two components:
    yarn start
    ```
 
-3. The React app should open automatically in your browser at [http://localhost:3000](http://localhost:3000).
+3. The React app should automatically open in your browser at [http://localhost:3000](http://localhost:3000).
+
+---
 
 ## API Endpoints
 
-- **POST** `/upload/`  
+- **POST** `/upload/`\
   Uploads the main Excel file and loads patient data.
 
-- **GET** `/data/`  
+- **GET** `/data/`\
   Returns all patient data for the grid view.
 
-- **GET** `/sync/diagnostic/`  
+- **GET** `/sync/diagnostic/`\
   Synchronizes diagnostic fields (accepts query parameters `name` or `code`).
 
-- **GET** `/search/patients/`  
+- **GET** `/search/patients/`\
   Searches for patients by name.
 
-- **GET** `/search/diagnostics/`  
-  Searches for diagnostics by name.
+- **GET** `/search/diagnostics/`\
+  Searches for diagnostics by name (returns up to 50 matches).
 
-- **GET** `/search/procedures/`  
-  Searches for procedures by name.
+- **GET** `/search/diagnostics/code/`\
+  Searches for diagnostics by code (returns up to 50 matches).
 
-- **GET** `/search/medications/`  
-  Searches for medications by name.
+- **GET** `/search/procedures/`\
+  Searches for procedures by name (returns up to 50 matches).
 
-- **POST** `/add/`  
-  Adds a new entry (with 5 fields each for procedures, medications, and supplies).
+- **GET** `/search/medications/`\
+  Searches for medications by a concatenated string (returns up to 50 matches).
 
-- **POST** `/save/`  
+- **POST** `/add/`\
+  Adds a new entry (with multiple rows for procedures, medications, and supplies).
+
+- **POST** `/delete/`\
+  Deletes specified rows from the data.
+
+- **POST** `/save/`\
   Saves the current data to the Excel file with colored rows.
+
+---
+
+## Deployment on Render
+
+To deploy your app on [Render](https://render.com), follow these steps:
+
+1. **Create a new Web Service** in your Render dashboard.
+2. **Connect your GitHub repository**.
+3. **Configure the Build Command:**
+   ```bash
+   pip install -r requirements.txt && cd frontend && yarn install && yarn build
+   ```
+4. **Configure the Start Command:**
+   ```bash
+   uvicorn main:app --host 0.0.0.0 --port $PORT
+   ```
+5. **Deploy!**\
+   Render will build and deploy your app. Check logs for any errors.
+
+---
 
 ## Additional Notes
 
-- **Diagnostic Sync:**  
-  The `/sync/diagnostic/` endpoint allows you to provide either a diagnostic name or code; the endpoint returns both values so that the two input fields can sync automatically.
+- **Asynchronous Search:** Large lists are now server-searched for better performance.
+- **Floating Delete Button:** The delete button in the grid view remains visible.
+- **Grid Coloring & Data Updates:** The backend applies rotating fill colors to the Excel output based on patient and date groupings.
 
-- **Grid View:**  
-  The `/data/` endpoint provides the data for the grid view. The React frontend displays this in a table after a file upload.
-
-- **Deployment:**  
-  For local development, run the FastAPI backend and React frontend on your computer. For production, consider hosting the backend on a cloud service and deploying the React build on a service such as Vercel or Netlify.
-
-Enjoy your v2 App!
-
-
-##########
-arreglar lo de observaciones------
-fecha de ingreso y egreso
-diagnostico secundario------
-poner mas colores------
-editar ahi mismo el numer (16 drenajes --> 1 drenaje nomas era)
+Enjoy the v2.2 App!
