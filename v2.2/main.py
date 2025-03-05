@@ -169,6 +169,7 @@ class NewEntry(BaseModel):
     diagnostico_secundario_code: str = ""
     fecha_ingreso: str = ""
     fecha_egreso: str = ""
+    observaciones: str = ""
     procedimientos: list[EntryItem] = []
     medicamentos: list[EntryItem] = []
     insumos: list[EntryItem] = []
@@ -304,7 +305,7 @@ def add_entry(entry: NewEntry):
         "DIAGNSITICO SECUNDARIO 1": entry.diagnostico_secundario_code,
         "FECHA DE INGRESO": entry.fecha_ingreso,
         "FECHA DE EGRESO": entry.fecha_egreso,
-        "OBSERVACIONES": ""
+        "OBSERVACIONES": entry.observaciones
     }
     new_entries = []
     for item in entry.procedimientos:
