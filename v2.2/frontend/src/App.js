@@ -40,7 +40,6 @@ function App() {
   const [diagnosticoSecundario, setDiagnosticoSecundario] = useState({ nameSelect: null, codeSelect: null });
   const [fechaIngreso, setFechaIngreso] = useState("");
   const [fechaEgreso, setFechaEgreso] = useState("");
-  const [observaciones, setObservaciones] = useState("");
 
   // Dynamic rows for procedures, medications, and insumos
   const [procedimientos, setProcedimientos] = useState([{ ...blankRow }]);
@@ -163,8 +162,8 @@ function App() {
     setMedicamentos(prev => {
       const newRows = [...prev];
       newRows[index] = {
-        // Remove code from description, only keep what's after " - "
-        name: selectedOption?.value ? selectedOption.value.split(" - ").slice(1).join(" - ").trim() : "",
+        // Ensure code is converted to string
+        name: selectedOption?.value || "",
         code: selectedOption?.code ? selectedOption.code.toString() : "",
         quantity: newRows[index].quantity
       };
@@ -249,7 +248,6 @@ function App() {
       diagnostico_secundario_code: diagnosticoSecundario.nameSelect?.value || "",
       fecha_ingreso: fechaIngreso,
       fecha_egreso: fechaEgreso,
-      observaciones: observaciones,
       procedimientos: procedimientos.filter(r => r.name),
       medicamentos: medicamentos.filter(r => r.name),
       insumos: insumos.filter(r => r.name)
@@ -333,7 +331,6 @@ function App() {
     setProcedimientos([{ ...blankRow }]);
     setMedicamentos([{ ...blankRow }]);
     setInsumos([{ ...blankRow }]);
-    setObservaciones("");
     setSelectedRows([]);
     setFormKey(Date.now());
   };
@@ -456,19 +453,10 @@ function App() {
             {medicamentos.map((item, i) => (
               <div key={`med-${i}`} className="row-group">
                 <Select
-                  options={medicationsMaster.map(option => ({
-                    ...option,
-                    label: option.value.split(" - ").slice(1).join(" - ").trim(),
-                    value: option.value,
-                    code: option.code
-                  }))}
+                  options={medicationsMaster}
                   value={
                     item.name
-                      ? {
-                          value: item.name,
-                          label: item.name.split(" - ").slice(1).join(" - ").trim(),
-                          code: item.code ? item.code.toString() : ""
-                        }
+                      ? { value: item.name, label: item.name, code: item.code ? item.code.toString() : "" }
                       : null
                   }
                   onChange={(selected) => handleMedSelect(i, selected)}
@@ -507,17 +495,6 @@ function App() {
               </div>
             ))}
           </fieldset>
-          {/* Observaciones */}
-          <div className="form-group">
-            <label>Observaciones:</label>
-            <textarea
-              value={observaciones}
-              onChange={(e) => setObservaciones(e.target.value)}
-              placeholder="Ingrese sus observaciones aquí..."
-              rows={4}
-              style={{ width: "100%", padding: "8px", marginTop: "8px" }}
-            />
-          </div>
           {/* Submit & Clear */}
           <div className="button-group">
             <button type="submit" className="btn-submit">Agregar Entrada</button>

@@ -18,8 +18,8 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:8000",
-        "https://efbd-67-173-101-35.ngrok-free.app"
+        "http://localhost:3000",
+        "https://YOUR-NGROK-OR-RENDER-URL"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -169,7 +169,6 @@ class NewEntry(BaseModel):
     diagnostico_secundario_code: str = ""
     fecha_ingreso: str = ""
     fecha_egreso: str = ""
-    observaciones: str = ""
     procedimientos: list[EntryItem] = []
     medicamentos: list[EntryItem] = []
     insumos: list[EntryItem] = []
@@ -305,7 +304,7 @@ def add_entry(entry: NewEntry):
         "DIAGNSITICO SECUNDARIO 1": entry.diagnostico_secundario_code,
         "FECHA DE INGRESO": entry.fecha_ingreso,
         "FECHA DE EGRESO": entry.fecha_egreso,
-        "OBSERVACIONES": entry.observaciones
+        "OBSERVACIONES": ""
     }
     new_entries = []
     for item in entry.procedimientos:
